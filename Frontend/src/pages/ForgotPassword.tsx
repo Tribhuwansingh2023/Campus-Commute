@@ -35,6 +35,11 @@ const ForgotPassword = () => {
       if (!response.ok) {
         throw new Error("Failed to send OTP");
       }
+      const data = await response.json();
+
+if (data.emailFailed && data.otp) {
+  alert(`Your OTP is: ${data.otp}`);
+}
       
       setStep("otp");
       toast({
