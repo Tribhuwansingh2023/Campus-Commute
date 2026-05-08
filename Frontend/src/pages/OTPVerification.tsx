@@ -1,0 +1,259 @@
+import { useState, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import MobileLayout from "@/components/MobileLayout";
+import AuthCard from "@/components/AuthCard";
+import GradientButton from "@/components/GradientButton";
+import BackButton from "@/components/BackButton";
+import FormInput from "@/components/FormInput";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
+
+const OTPVerification = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { pendingEmail, setPendingEmail } = useAuth();
+  const { toast } = useToast();
+  
+  const [otp, setOtp] = useState(["", "", "", ""]);
+  const [resendCount, setResendCount] = useState(3);
+  const [showChangeEmail, setShowChangeEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  useEffect(() => {
+    inputRefs.current[0]?.focus();
+  }, []);
+
+  const handleChange = (index: number, value: string) => {
+    if (value.length > 1) {
+      value = value.slice(-1);
+    }
+    
+    if (!/^\d*$/.test(value)) return;
+
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    if (value && index < otp.length - 1) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerify = async () => {
+    const fullOtp = otp.join("");
+    if (fullOtp.length !== 4) {
+      toast({
+        title: "Invalid OTP",
+        description: "Please enter all 4 digits",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8000/user/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail, otp: fullOtp }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Verification failed");
+      }
+
+      toast({ title: "Success", description: "Email Verified successfully!" });
+      navigate("/success");
+    } catch (err: any) {
+      toast({
+        title: "Verification Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCount <= 0) {
+      toast({
+        title: "Max attempts reached",
+        description: "Please try again later",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8000/user/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+
+      if (!response.ok) throw new Error();
+
+      const data = await response.json();
+      setResendCount(resendCount - 1);
+      setOtp(["", "", "", ""]);
+      inputRefs.current[0]?.focus();
+
+      toast({ title: "OTP Resent", description: "New code sent to your email." });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to resend OTP", variant: "destructive" });
+    }
+  };
+
+  const handleChangeEmail = () => {
+    setShowChangeEmail(true);
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!newEmail.trim()) {
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch("http://localhost:8000/user/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail }),
+      });
+
+      if (!response.ok) throw new Error();
+
+      setPendingEmail(newEmail);
+      setNewEmail("");
+      setShowChangeEmail(false);
+      setOtp(["", "", "", ""]);
+      inputRefs.current[0]?.focus();
+
+      toast({
+        title: "Email Updated",
+        description: `Verification code sent to ${newEmail}`,
+      });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to send code to new email", variant: "destructive" });
+    }
+  };
+
+  return (
+    <MobileLayout>
+      <AuthCard>
+        <div className="flex flex-col min-h-[calc(100vh-5rem)]">
+          <div className="flex items-center justify-between mb-6">
+            <BackButton />
+          </div>
+
+          <div className="flex-1 pt-2">
+            {!showChangeEmail ? (
+              <>
+                <h1 className="text-2xl font-bold text-foreground text-center mb-4">
+                  Verification Code
+                </h1>
+                <p className="text-muted-foreground text-center mb-4">
+                  A verification code was sent to your email.
+                </p>
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-8 mx-auto max-w-sm flex items-start gap-2 text-left">
+                  <span className="text-amber-500 text-lg leading-none">⚠️</span>
+                  <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
+                    <strong>Not seeing the email?</strong> Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
+                  </p>
+                </div>
+
+<div className="flex flex-wrap justify-center gap-3 mb-8">
+                {otp.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => (inputRefs.current[index] = el)}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleChange(index, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(index, e)}
+                    className="w-16 h-16 text-center text-2xl font-semibold bg-background border-2 border-muted rounded-2xl focus:border-primary focus:outline-none transition-colors"
+                  />
+                ))}
+              </div>
+
+              <GradientButton onClick={handleVerify}>
+                Verify
+              </GradientButton>
+
+              <p className="text-center text-muted-foreground mt-6">
+                Didn't receive code?{" "}
+                <button 
+                  onClick={handleResend}
+                  className="text-foreground font-medium hover:underline"
+                  disabled={resendCount <= 0}
+                >
+                  Resend({resendCount} left)
+                </button>
+              </p>
+
+
+            </>
+          ) : (
+            <>
+                <h1 className="text-2xl font-bold text-foreground text-center mb-4">
+                  Change Email Address
+                </h1>
+                <p className="text-muted-foreground text-center mb-8">
+                  Enter your new email address
+                </p>
+
+                <div className="mb-6">
+                  <FormInput
+                    placeholder="Enter new email address"
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <GradientButton onClick={handleUpdateEmail}>
+                    Update Email
+                  </GradientButton>
+                  <button
+                    onClick={() => {
+                      setShowChangeEmail(false);
+                      setNewEmail("");
+                    }}
+                    className="w-full py-3 px-4 border-2 border-foreground/20 rounded-full text-foreground font-medium hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {!showChangeEmail && (
+            <button 
+              onClick={handleChangeEmail}
+              className="text-center text-muted-foreground hover:text-foreground transition-colors mt-8"
+            >
+              Change email address
+            </button>
+          )}
+        </div>
+      </AuthCard>
+    </MobileLayout>
+  );
+};
+
+export default OTPVerification;
