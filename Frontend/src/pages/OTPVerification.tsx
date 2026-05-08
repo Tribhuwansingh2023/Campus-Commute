@@ -7,6 +7,7 @@ import BackButton from "@/components/BackButton";
 import FormInput from "@/components/FormInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const OTPVerification = () => {
   const navigate = useNavigate();
@@ -58,7 +59,7 @@ const OTPVerification = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/user/verify-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail, otp: fullOtp }),
@@ -91,7 +92,7 @@ const OTPVerification = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/user/send-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail }),
@@ -125,7 +126,7 @@ const OTPVerification = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/user/send-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: newEmail }),
