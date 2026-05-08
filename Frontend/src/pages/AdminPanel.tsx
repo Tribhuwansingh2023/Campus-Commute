@@ -7,7 +7,7 @@ import BackButton from "@/components/BackButton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
 interface AdminSettings {
   adminName: string;
