@@ -9,3 +9,8 @@ dist/
 .gemini/
 coverage/
 build/
+
+# Test/debug scripts
+test_mailer.js
+test_railway_otp.js
+test-smtp.js
