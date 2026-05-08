@@ -7,11 +7,22 @@ import GradientButton from "@/components/GradientButton";
 import BackButton from "@/components/BackButton";
 import { useToast } from "@/hooks/use-toast";
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters");
 
 const ResetPassword = () => {
   const navigate = useNavigate();
+  const location = require("react-router-dom").useLocation();
   const { toast } = useToast();
+  
+  const email = location.state?.email;
+
+  // Protect route if accessed without verification
+  if (!email) {
+    navigate("/forgot-password", { replace: true });
+    return null;
+  }
   
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -36,14 +47,33 @@ const ResetPassword = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
 
-    toast({
-      title: "Password Reset",
-      description: "Your password has been successfully reset",
-    });
-    navigate("/login");
+    try {
+      const response = await fetch(`${BACKEND_URL}/user/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, newPassword }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to reset password");
+      }
+
+      toast({
+        title: "Password Reset",
+        description: "Your password has been successfully reset",
+      });
+      navigate("/login");
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (

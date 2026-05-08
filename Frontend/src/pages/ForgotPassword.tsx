@@ -81,8 +81,7 @@ if (data.emailFailed && data.otp) {
         const data = await response.json();
         throw new Error(data.error || "Verification failed");
       }
-      
-      navigate("/reset-password");
+      navigate("/reset-password", { state: { email } });
     } catch (err: any) {
       toast({
         title: "Verification Failed",
