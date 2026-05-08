@@ -162,14 +162,18 @@ module.exports.sendOTP = async (req, res) => {
 
     try {
       const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: { user: process.env.EMAIL, pass: rawPass },
-        connectionTimeout: 3000,
-        greetingTimeout: 3000,
-        socketTimeout: 5000,
-      });
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  requireTLS: true,
+  auth: { user: process.env.EMAIL, pass: rawPass },
+  tls: {
+    rejectUnauthorized: false,
+  },
+  connectionTimeout: 3000,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
+});
 
       const emailPromise = transporter.sendMail({
         from: `"Campus Commute" <${process.env.EMAIL}>`,
@@ -194,10 +198,10 @@ module.exports.sendOTP = async (req, res) => {
 
       await Promise.race([emailPromise, timeoutPromise]);
       emailSent = true;
-      console.log(`[OTP] Email sent via SSL-465 to ${email}`);
+      console.log(`[OTP] Email sent via TLS-587 to ${email}`);
     } catch (err) {
       emailError = err.message;
-      console.warn(`[OTP] SSL-465 failed:`, err.message);
+      console.warn(`[OTP] TLS-587 failed:`, err.message);
     }
 
     if (emailSent) {
