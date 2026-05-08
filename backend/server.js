@@ -18,7 +18,7 @@ const server = http.createServer(app);
 
 // ====== MIDDLEWARE ======
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: true,
   credentials: true,
 }));
 app.use(express.json());
