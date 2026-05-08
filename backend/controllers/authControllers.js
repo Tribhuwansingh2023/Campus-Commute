@@ -157,56 +157,47 @@ module.exports.sendOTP = async (req, res) => {
     // Gmail App Passwords have spaces — strip them
     const rawPass = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
 
-    // Try sending via both SMTP ports — 587 (STARTTLS) first, then 465 (SSL)
     let emailSent = false;
     let emailError = null;
 
-    const transportConfigs = [
-      { host: 'smtp.gmail.com', port: 587, secure: false, name: 'STARTTLS-587' },
-      { host: 'smtp.gmail.com', port: 465, secure: true,  name: 'SSL-465' },
-    ];
+    try {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: process.env.EMAIL, pass: rawPass },
+        connectionTimeout: 3000,
+        greetingTimeout: 3000,
+        socketTimeout: 5000,
+      });
 
-    for (const cfg of transportConfigs) {
-      if (emailSent) break;
-      try {
-        const transporter = nodemailer.createTransport({
-          host: cfg.host,
-          port: cfg.port,
-          secure: cfg.secure,
-          auth: { user: process.env.EMAIL, pass: rawPass },
-          connectionTimeout: 8000,
-          greetingTimeout: 8000,
-          socketTimeout: 10000,
-        });
-
-        const emailPromise = transporter.sendMail({
-          from: `"Campus Commute" <${process.env.EMAIL}>`,
-          to: email,
-          subject: "Your Campus Commute Verification Code",
-          text: `Your verification code is: ${otpCode}. It expires in 5 minutes. Do not share this with anyone.`,
-          html: `
-            <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
-              <h2 style="color:#0f766e;margin-bottom:8px">Campus Commute</h2>
-              <p style="color:#374151">Your email verification code is:</p>
-              <div style="background:#f0fdfa;border:2px solid #0f766e;border-radius:8px;padding:20px;text-align:center;margin:16px 0">
-                <span style="font-size:40px;font-weight:bold;letter-spacing:16px;color:#0f766e;font-family:monospace">${otpCode}</span>
-              </div>
-              <p style="color:#6b7280;font-size:13px">Expires in <strong>5 minutes</strong>. Do not share this code.</p>
+      const emailPromise = transporter.sendMail({
+        from: `"Campus Commute" <${process.env.EMAIL}>`,
+        to: email,
+        subject: "Your Campus Commute Verification Code",
+        text: `Your verification code is: ${otpCode}. It expires in 5 minutes. Do not share this with anyone.`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+            <h2 style="color:#0f766e;margin-bottom:8px">Campus Commute</h2>
+            <p style="color:#374151">Your email verification code is:</p>
+            <div style="background:#f0fdfa;border:2px solid #0f766e;border-radius:8px;padding:20px;text-align:center;margin:16px 0">
+              <span style="font-size:40px;font-weight:bold;letter-spacing:16px;color:#0f766e;font-family:monospace">${otpCode}</span>
             </div>
-          `,
-        });
+            <p style="color:#6b7280;font-size:13px">Expires in <strong>5 minutes</strong>. Do not share this code.</p>
+          </div>
+        `,
+      });
 
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timed out on ${cfg.name}`)), 12000)
-        );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("SMTP Timeout")), 5000)
+      );
 
-        await Promise.race([emailPromise, timeoutPromise]);
-        emailSent = true;
-        console.log(`[OTP] Email sent via ${cfg.name} to ${email}`);
-      } catch (err) {
-        emailError = err.message;
-        console.warn(`[OTP] ${cfg.name} failed:`, err.message);
-      }
+      await Promise.race([emailPromise, timeoutPromise]);
+      emailSent = true;
+      console.log(`[OTP] Email sent via SSL-465 to ${email}`);
+    } catch (err) {
+      emailError = err.message;
+      console.warn(`[OTP] SSL-465 failed:`, err.message);
     }
 
     if (emailSent) {

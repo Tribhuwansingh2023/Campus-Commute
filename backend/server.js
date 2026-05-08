@@ -4,6 +4,7 @@ const app = express();
 
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
+const compression = require('compression');
 require('dotenv').config();
 
 // Route handlers have been moved
@@ -17,9 +18,11 @@ const port = process.env.PORT || process.env.BACKEND_PORT || 8000;
 const server = http.createServer(app);
 
 // ====== MIDDLEWARE ======
+app.use(compression()); // Gzip compresses JSON and text responses
 app.use(cors({
-  origin: true,
+  origin: ["https://campus-commute-vrpq.vercel.app", "http://localhost:8080", "http://localhost:5173", "http://localhost:3000"],
   credentials: true,
+  optionsSuccessStatus: 200
 }));
 app.use(express.json());
 app.use(cookieParser());

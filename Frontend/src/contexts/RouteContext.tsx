@@ -85,6 +85,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [tripStatus, setTripStatus] = useState<TripStatus | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const selectedRouteRef = useRef<BusRoute | null>(null);
 
   const addNotification = useCallback((notif: Omit<LiveNotification, "id">) => {
     setNotifications(prev => [
@@ -114,19 +115,37 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
     fetchRoutes();
   }, []);
 
-  // Single shared socket connection — joins the selected route's room
+  // Update ref when route changes and join new room if socket exists
   useEffect(() => {
-    if (!selectedRoute) return;
+    selectedRouteRef.current = selectedRoute;
+    if (socketRef.current && socketConnected && selectedRoute) {
+      socketRef.current.emit("join-bus", { busId: selectedRoute.busNumber });
+      socketRef.current.emit("get-trip-status", { busId: selectedRoute.busNumber });
+    }
+    // Reset live data when route changes
+    setLiveBusPosition(null);
+    setStopETAs([]);
+    setTripStatus(null);
+  }, [selectedRoute, socketConnected]);
 
+  // Single shared socket connection initialized ONCE
+  useEffect(() => {
     const socketURL = BACKEND_URL;
-    const socket = io(socketURL, { transports: ["websocket", "polling"] });
+    const socket = io(socketURL, { 
+      transports: ["websocket"], // websocket only for max performance
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000
+    });
     socketRef.current = socket;
 
     socket.on("connect", () => {
       console.log("[RouteContext] Socket connected:", socket.id);
       setSocketConnected(true);
-      // Join the selected bus room
-      socket.emit("join-bus", { busId: selectedRoute.busNumber });
+      // Join the selected bus room if one is already selected
+      if (selectedRouteRef.current) {
+        socket.emit("join-bus", { busId: selectedRouteRef.current.busNumber });
+        socket.emit("get-trip-status", { busId: selectedRouteRef.current.busNumber });
+      }
     });
 
     socket.on("disconnect", () => {
@@ -136,15 +155,12 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
 
     // ── Live bus position updates ──
     socket.on("driver-location-update", (data: { routeId: string; lat: number; lng: number }) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         setLiveBusPosition((prev) => {
           if (prev) {
-            // FIXED: Bus Marker Rotation (BONUS 2)
             const [prevLat, prevLng] = prev;
             if (prevLat !== data.lat || prevLng !== data.lng) {
-              // CSS rotate: 0 is Right (East), 90 is Down (South), -90 is Up (North)
-              // latDiff: >0 is North. lngDiff: >0 is East.
-              const latDiff = prevLat - data.lat; // Invert to make North negative (Up in CSS)
+              const latDiff = prevLat - data.lat; 
               const lngDiff = data.lng - prevLng;
               const bearing = Math.atan2(latDiff, lngDiff) * 180 / Math.PI;
               setBusRotation(bearing);
@@ -164,7 +180,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
 
     // ── Bus went offline ──
     socket.on("bus-offline", (data: { routeId: string }) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         setLiveBusPosition(null);
         setStopETAs([]);
         setTripStatus({ routeId: data.routeId, status: "not-started", timestamp: Date.now() });
@@ -173,17 +189,14 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
 
     // ── Trip status update (for Running Status page) ──
     socket.on("trip-status-update", (data: TripStatus) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         setTripStatus(data);
       }
     });
 
-    // Request current trip status on connect
-    socket.emit("get-trip-status", { busId: selectedRoute.busNumber });
-
     // ── Trip started ──
     socket.on("trip-started", (data: { routeId: string; routeName: string; message: string; timestamp: number }) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         addNotification({
           type: "trip-started",
           title: "🚌 Trip Started",
@@ -195,7 +208,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
 
     // ── Bus near a stop ──
     socket.on("bus-near-stop", (data: { routeId: string; stopName: string; message: string; timestamp: number }) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         addNotification({
           type: "bus-near-stop",
           title: "📍 Approaching Stop",
@@ -207,7 +220,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
 
     // ── Trip ended ──
     socket.on("trip-ended", (data: { routeId: string; routeName: string; message: string; timestamp: number }) => {
-      if (data.routeId === selectedRoute.busNumber) {
+      if (data.routeId === selectedRouteRef.current?.busNumber) {
         setLiveBusPosition(null);
         setStopETAs([]);
         setTripStatus({ routeId: data.routeId, status: "not-started", timestamp: Date.now() });
@@ -224,14 +237,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [selectedRoute, addNotification]);
-
-  // Reset live data when route changes
-  useEffect(() => {
-    setLiveBusPosition(null);
-    setStopETAs([]);
-    setTripStatus(null);
-  }, [selectedRoute?.busNumber]);
+  }, [addNotification]); // removed selectedRoute from dependencies to keep single socket instance
 
   return (
     <RouteContext.Provider
