@@ -9,6 +9,7 @@ import GradientButton from "@/components/GradientButton";
 import BackButton from "@/components/BackButton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters");
 
@@ -108,7 +109,7 @@ const SetPassword = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/user/send-otp", {
+      const response = await fetch("`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail }),
