@@ -101,6 +101,9 @@ const OTPVerification = () => {
       if (!response.ok) throw new Error();
 
       const data = await response.json();
+      if (data.emailFailed && data.otp) {
+  alert(`Your OTP is: ${data.otp}`);
+}
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);
       inputRefs.current[0]?.focus();
