@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 export type UserRole = "student" | "driver" | "admin" | null;
 
@@ -78,7 +79,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string, role: UserRole): Promise<{success: boolean, role?: UserRole}> => {
     try {
-      const response = await fetch("http://localhost:8000/user/login", {
+      const response = await fetch(`${BACKEND_URL}/user/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -108,7 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const googleLogin = async (accessToken: string, role: UserRole): Promise<{success: boolean, role?: UserRole}> => {
     try {
-      const response = await fetch("http://localhost:8000/user/google-login", {
+      const response = await fetch(`${BACKEND_URL}/user/google-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -139,7 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
-      await fetch("http://localhost:8000/user/logout", { method: "POST", credentials: "include" });
+      await fetch(`${BACKEND_URL}/user/logout`, { method: "POST", credentials: "include" });
     } catch {}
     
     // FIXED: Alarm Persist Fix on Logout (BONUS 3)
@@ -165,7 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          phone: pendingUserData.phoneNumber
       };
 
-      const res = await fetch("http://localhost:8000/user/register", {
+      const res = await fetch(`${BACKEND_URL}/user/register`, {
          method: "POST",
          headers: { "Content-Type": "application/json" },
          credentials: "include",
