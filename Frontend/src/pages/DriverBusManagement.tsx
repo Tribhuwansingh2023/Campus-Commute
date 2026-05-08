@@ -4,6 +4,7 @@ import BackButton from "@/components/BackButton";
 import { Phone, User, Bus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const DriverBusManagement = () => {
   const { user } = useAuth();
@@ -13,7 +14,7 @@ const DriverBusManagement = () => {
   useEffect(() => {
     const fetchAdminInfo = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/admin/settings", { credentials: "include" });
+        const res = await fetch(`${BACKEND_URL}/api/admin/settings`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json();
           if (data.settings) setAdminInfo(data.settings);
