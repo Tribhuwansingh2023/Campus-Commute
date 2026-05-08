@@ -9,6 +9,7 @@ import GradientButton from "@/components/GradientButton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouteContext } from "@/contexts/RouteContext";
 import { useToast } from "@/hooks/use-toast";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const nameSchema = z.string()
   .min(2, "Name must be at least 2 characters")
@@ -157,7 +158,7 @@ const DriverSignup = () => {
     // Verify the driver secret key with the backend
     setIsVerifying(true);
     try {
-      const res = await fetch("http://localhost:8000/api/admin/verify-driver-key", {
+      fetch(`${BACKEND_URL}/api/admin/verify-driver-key`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: secretKey.trim() }),
