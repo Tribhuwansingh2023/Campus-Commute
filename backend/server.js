@@ -11,7 +11,7 @@ const { initSocket } = require('./config/socket');
 const connectDB = require('./config/connectDB');
 
 // ====== CONFIG ======
-const port = process.env.BACKEND_PORT || 8000;
+const port = process.env.PORT || process.env.BACKEND_PORT || 8000;
 
 // ====== CREATE HTTP SERVER ======
 const server = http.createServer(app);
