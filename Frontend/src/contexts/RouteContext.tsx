@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import { io, Socket } from "socket.io-client";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 export interface Coordinate {
   lat: number;
@@ -98,7 +99,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const fetchRoutes = async () => {
       try {
-        const response = await fetch("http://localhost:8000/routes");
+        const response = await fetch(`${BACKEND_URL}/routes`);
         if (response.ok) {
           const data = await response.json();
           setRoutes(data);
@@ -117,7 +118,7 @@ export const RouteProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!selectedRoute) return;
 
-    const socketURL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+    const socketURL = BACKEND_URL;
     const socket = io(socketURL, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
