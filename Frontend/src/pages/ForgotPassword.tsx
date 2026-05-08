@@ -6,6 +6,7 @@ import FormInput from "@/components/FormInput";
 import GradientButton from "@/components/GradientButton";
 import BackButton from "@/components/BackButton";
 import { useToast } from "@/hooks/use-toast";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const emailSchema = z.string().email("Invalid email address");
 
@@ -25,7 +26,7 @@ const ForgotPassword = () => {
       setError("");
       
       // Actually call backend to send OTP
-      const response = await fetch("http://localhost:8000/user/send-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -65,7 +66,7 @@ const ForgotPassword = () => {
     }
     
     try {
-      const response = await fetch("http://localhost:8000/user/verify-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/verify-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, otp: fullOtp }),
@@ -90,7 +91,7 @@ const ForgotPassword = () => {
     if (resendCount <= 0) return;
     
     try {
-      const response = await fetch("http://localhost:8000/user/send-otp", {
+      const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
