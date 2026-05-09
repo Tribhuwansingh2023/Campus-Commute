@@ -148,23 +148,19 @@ module.exports.sendOTP = async (req, res) => {
     const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
     console.log(`\n=============================\nGENERATED OTP FOR ${email} : ${otpCode}\n=============================\n`);
 
-    // Delete any existing OTP for this email
+    // Delete any existing OTP for this email, then save new one
     await otpModel.deleteMany({ email });
-
-    // Save the real OTP to the database
     await otpModel.create({ email, otp: otpCode });
 
     // Gmail App Passwords have spaces — strip them
     const rawPass = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
-
-    let emailSent = false;
-    let emailError = null;
+    const senderEmail = process.env.EMAIL || "";
 
     const mailPayload = {
-      from: `"Campus Commute" <${process.env.EMAIL}>`,
+      from: `"Campus Commute" <${senderEmail}>`,
       to: email,
       subject: "Your Campus Commute Verification Code",
-      text: `Your verification code is: ${otpCode}. It expires in 5 minutes. Do not share this with anyone.`,
+      text: `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
           <h2 style="color:#0f766e;margin-bottom:8px">Campus Commute</h2>
@@ -177,78 +173,57 @@ module.exports.sendOTP = async (req, res) => {
       `,
     };
 
-    // Try port 587 (STARTTLS) first — Railway typically allows this
-    if (!emailSent) {
+    // ── FAST PATH: respond immediately with the OTP ──────────────────────────
+    // Railway blocks outbound SMTP. Return the OTP in the response so the UI
+    // can display it instantly (no waiting for SMTP timeouts).
+    res.status(200).json({
+      success: true,
+      emailFailed: true,
+      otp: otpCode,
+      message: "Email delivery failed. Use the code shown on screen.",
+    });
+
+    // ── BACKGROUND EMAIL ATTEMPT: try SMTP after responding ─────────────────
+    // If this ever succeeds (e.g., on a different host), the user gets a bonus
+    // email, but we never block the UI waiting for it.
+    const tryEmail = async () => {
       try {
-        const transporter587 = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 587,
-          secure: false,
-          requireTLS: true,
-          auth: { user: process.env.EMAIL, pass: rawPass },
+        // Try port 587 (STARTTLS) — most cloud providers allow this
+        const t587 = nodemailer.createTransport({
+          host: 'smtp.gmail.com', port: 587, secure: false, requireTLS: true,
+          auth: { user: senderEmail, pass: rawPass },
           tls: { rejectUnauthorized: false },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
+          connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000,
         });
-        const p587 = transporter587.sendMail(mailPayload);
-        const t587 = new Promise((_, reject) => setTimeout(() => reject(new Error("TLS-587 Timeout")), 12000));
-        await Promise.race([p587, t587]);
-        emailSent = true;
-        console.log(`[OTP] Email sent via TLS-587 to ${email}`);
-      } catch (err) {
-        emailError = err.message;
-        console.warn(`[OTP] TLS-587 failed:`, err.message);
+        await t587.sendMail(mailPayload);
+        console.log(`[OTP] Background email sent via TLS-587 to ${email} — OTP: ${otpCode}`);
+      } catch (e1) {
+        console.warn(`[OTP] Background TLS-587 failed:`, e1.message);
+        try {
+          // Try port 465 (SSL) as fallback
+          const t465 = nodemailer.createTransport({
+            host: 'smtp.gmail.com', port: 465, secure: true,
+            auth: { user: senderEmail, pass: rawPass },
+            connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000,
+          });
+          await t465.sendMail(mailPayload);
+          console.log(`[OTP] Background email sent via SSL-465 to ${email} — OTP: ${otpCode}`);
+        } catch (e2) {
+          console.warn(`[OTP] Background SSL-465 also failed:`, e2.message);
+        }
       }
-    }
+    };
+    tryEmail(); // fire-and-forget — does NOT await
 
-    // Fallback: try port 465 (SSL)
-    if (!emailSent) {
-      try {
-        const transporter465 = nodemailer.createTransport({
-          host: 'smtp.gmail.com',
-          port: 465,
-          secure: true,
-          auth: { user: process.env.EMAIL, pass: rawPass },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
-        });
-        const p465 = transporter465.sendMail(mailPayload);
-        const t465 = new Promise((_, reject) => setTimeout(() => reject(new Error("SSL-465 Timeout")), 12000));
-        await Promise.race([p465, t465]);
-        emailSent = true;
-        console.log(`[OTP] Email sent via SSL-465 to ${email}`);
-      } catch (err) {
-        emailError = err.message;
-        console.warn(`[OTP] SSL-465 failed:`, err.message);
-      }
-    }
-
-    if (emailSent) {
-      return res.status(200).json({ success: true, message: "OTP sent to your email." });
-    } else {
-      // Network is blocking SMTP — return OTP as fallback so signup always works
-      const isNetworkBlock = emailError && (
-        emailError.includes("ETIMEOUT") || emailError.includes("ECONNREFUSED") ||
-        emailError.includes("ENOTFOUND") || emailError.includes("Timed out") ||
-        emailError.includes("Timeout")
-      );
-      console.log(`[OTP FALLBACK] ${isNetworkBlock ? "Network blocked SMTP" : "Auth/send error"} for ${email}. Error: ${emailError}`);
-      return res.status(200).json({
-        success: true,
-        emailFailed: true,
-        otp: otpCode,
-        message: isNetworkBlock
-          ? "Email blocked by network. Use the code shown on screen."
-          : "Email delivery failed. Use the code shown on screen.",
-      });
-    }
   } catch (error) {
     console.error("sendOTP critical error:", error);
-    res.status(500).json({ error: "Failed to generate OTP. Please try again." });
+    // Only send error response if headers haven't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to generate OTP. Please try again." });
+    }
   }
 };
+
 
 module.exports.verifyOTP = async (req, res) => {
   try {

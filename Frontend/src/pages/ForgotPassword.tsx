@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import MobileLayout from "@/components/MobileLayout";
@@ -19,13 +19,33 @@ const ForgotPassword = () => {
   const [step, setStep] = useState<"email" | "otp">("email");
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [resendCount, setResendCount] = useState(3);
+  const [isSending, setIsSending] = useState(false);
+  const [fallbackOtp, setFallbackOtp] = useState<string | null>(null);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  useEffect(() => {
+    if (step === "otp") {
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    }
+  }, [step]);
+
+  // Auto-fill OTP inputs from fallback code
+  const autoFillOtp = (code: string) => {
+    const digits = code.split("").slice(0, 4);
+    const filled = [...digits, "", "", "", ""].slice(0, 4);
+    setOtp(filled);
+    setTimeout(() => {
+      const lastIdx = Math.min(digits.length - 1, 3);
+      inputRefs.current[lastIdx]?.focus();
+    }, 50);
+  };
 
   const handleSendOTP = async () => {
     try {
       emailSchema.parse(email);
       setError("");
+      setIsSending(true);
       
-      // Actually call backend to send OTP
       const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -37,15 +57,17 @@ const ForgotPassword = () => {
       }
       const data = await response.json();
 
-      // Fallback: if SMTP is blocked on Railway, backend returns the OTP directly
+      // Show fallback OTP on-screen if SMTP is blocked
       if (data.emailFailed && data.otp) {
-        alert(`📧 Email delivery failed.\n\nYour OTP is: ${data.otp}\n\nPlease enter this code to continue.`);
+        setFallbackOtp(data.otp);
       }
       
       setStep("otp");
       toast({
-        title: "OTP Sent",
-        description: data.emailFailed ? "Email blocked — check the popup for your code." : "A verification code has been sent to your email",
+        title: data.emailFailed ? "Code Generated" : "OTP Sent",
+        description: data.emailFailed
+          ? "Email blocked — use the code shown below."
+          : "A verification code has been sent to your email",
       });
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -57,6 +79,8 @@ const ForgotPassword = () => {
           variant: "destructive",
         });
       }
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -94,6 +118,7 @@ const ForgotPassword = () => {
 
   const handleResend = async () => {
     if (resendCount <= 0) return;
+    setIsSending(true);
     
     try {
       const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
@@ -104,16 +129,20 @@ const ForgotPassword = () => {
       
       if (!response.ok) throw new Error();
       
-      const resendData = await response.json();
-      if (resendData.emailFailed && resendData.otp) {
-        alert(`📧 Email blocked.\n\nYour new OTP is: ${resendData.otp}\n\nPlease enter this code to continue.`);
+      const data = await response.json();
+      if (data.emailFailed && data.otp) {
+        setFallbackOtp(data.otp);
+      } else {
+        setFallbackOtp(null);
       }
       
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);
       toast({
-        title: "OTP Resent",
-        description: "A new verification code has been sent",
+        title: data.emailFailed ? "New Code Generated" : "OTP Resent",
+        description: data.emailFailed
+          ? "Email blocked — use the code shown below."
+          : "A new verification code has been sent",
       });
     } catch {
       toast({
@@ -121,6 +150,8 @@ const ForgotPassword = () => {
         description: "Failed to resend code",
         variant: "destructive",
       });
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -129,6 +160,15 @@ const ForgotPassword = () => {
     const newOtp = [...otp];
     newOtp[index] = value.slice(-1);
     setOtp(newOtp);
+    if (value && index < 3) {
+      setTimeout(() => inputRefs.current[index + 1]?.focus(), 0);
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
   };
 
   return (
@@ -154,26 +194,56 @@ const ForgotPassword = () => {
                 error={error}
               />
               <div className="mt-8">
-                <GradientButton onClick={handleSendOTP}>
-                  Send OTP
+                <GradientButton onClick={handleSendOTP} disabled={isSending}>
+                  {isSending ? "Sending..." : "Send OTP"}
                 </GradientButton>
               </div>
             </>
           ) : (
             <>
-              <p className="text-muted-foreground text-center mb-8">
-                Enter the 4-digit code sent to {email}
+              <p className="text-muted-foreground text-center mb-4">
+                Enter the 4-digit code sent to <strong>{email}</strong>
               </p>
+
+              {/* ── Fallback OTP Banner ── */}
+              {fallbackOtp ? (
+                <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-2xl p-4 mb-6 text-center">
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wide">
+                    📧 Email blocked by network
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">Your verification code is:</p>
+                  <div className="text-4xl font-bold font-mono tracking-[0.5em] text-emerald-600 dark:text-emerald-400 mb-3">
+                    {fallbackOtp}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => autoFillOtp(fallbackOtp)}
+                    className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-full font-semibold hover:bg-emerald-700 transition-colors"
+                  >
+                    ✓ Auto-fill this code
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-6 flex items-start gap-2">
+                  <span className="text-amber-500 text-lg leading-none">⚠️</span>
+                  <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
+                    <strong>Not seeing the email?</strong> Check your <strong>Spam</strong> folder.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-center gap-4 mb-8">
                 {otp.map((digit, index) => (
                   <input
                     key={index}
+                    ref={(el) => (inputRefs.current[index] = el)}
                     type="text"
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handleOtpChange(index, e.target.value)}
-                    className="w-16 h-16 text-center text-2xl font-semibold bg-background border-2 border-muted rounded-2xl focus:border-primary focus:outline-none"
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    className="w-16 h-16 text-center text-2xl font-semibold bg-background border-2 border-muted rounded-2xl focus:border-primary focus:outline-none transition-colors"
                   />
                 ))}
               </div>
@@ -185,9 +255,9 @@ const ForgotPassword = () => {
                 <button 
                   onClick={handleResend}
                   className="text-foreground font-medium"
-                  disabled={resendCount <= 0}
+                  disabled={resendCount <= 0 || isSending}
                 >
-                  Resend({resendCount} left)
+                  {isSending ? "Sending..." : `Resend (${resendCount} left)`}
                 </button>
               </p>
             </>

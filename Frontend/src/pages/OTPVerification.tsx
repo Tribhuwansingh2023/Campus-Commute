@@ -19,11 +19,25 @@ const OTPVerification = () => {
   const [resendCount, setResendCount] = useState(3);
   const [showChangeEmail, setShowChangeEmail] = useState(false);
   const [newEmail, setNewEmail] = useState("");
+  // Fallback OTP shown on screen when email delivery is blocked
+  const [fallbackOtp, setFallbackOtp] = useState<string | null>(
+    (location.state as any)?.fallbackOtp ?? null
+  );
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
+
+  // Auto-fill OTP inputs from fallback code
+  const autoFillOtp = (code: string) => {
+    const digits = code.split("").slice(0, 4);
+    const filled = [...digits, "", "", "", ""].slice(0, 4);
+    setOtp(filled);
+    // Focus last filled box
+    const lastIdx = Math.min(digits.length - 1, 3);
+    setTimeout(() => inputRefs.current[lastIdx]?.focus(), 50);
+  };
 
   const handleChange = (index: number, value: string) => {
     if (value.length > 1) {
@@ -101,14 +115,24 @@ const OTPVerification = () => {
       if (!response.ok) throw new Error();
 
       const data = await response.json();
+
+      // Show fallback OTP on-screen if email is blocked
       if (data.emailFailed && data.otp) {
-  alert(`Your OTP is: ${data.otp}`);
-}
+        setFallbackOtp(data.otp);
+      } else {
+        setFallbackOtp(null);
+      }
+
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);
       inputRefs.current[0]?.focus();
 
-      toast({ title: "OTP Resent", description: "New code sent to your email." });
+      toast({
+        title: data.emailFailed ? "Code Generated" : "OTP Resent",
+        description: data.emailFailed
+          ? "Email blocked — use the code shown below."
+          : "New code sent to your email.",
+      });
     } catch (err) {
       toast({ title: "Error", description: "Failed to resend OTP", variant: "destructive" });
     }
@@ -137,6 +161,13 @@ const OTPVerification = () => {
 
       if (!response.ok) throw new Error();
 
+      const data = await response.json();
+      if (data.emailFailed && data.otp) {
+        setFallbackOtp(data.otp);
+      } else {
+        setFallbackOtp(null);
+      }
+
       setPendingEmail(newEmail);
       setNewEmail("");
       setShowChangeEmail(false);
@@ -145,7 +176,9 @@ const OTPVerification = () => {
 
       toast({
         title: "Email Updated",
-        description: `Verification code sent to ${newEmail}`,
+        description: data.emailFailed
+          ? `Email blocked — use the code shown below.`
+          : `Verification code sent to ${newEmail}`,
       });
     } catch (err) {
       toast({ title: "Error", description: "Failed to send code to new email", variant: "destructive" });
@@ -169,47 +202,68 @@ const OTPVerification = () => {
                 <p className="text-muted-foreground text-center mb-4">
                   A verification code was sent to your email.
                 </p>
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-8 mx-auto max-w-sm flex items-start gap-2 text-left">
-                  <span className="text-amber-500 text-lg leading-none">⚠️</span>
-                  <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
-                    <strong>Not seeing the email?</strong> Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
-                  </p>
+
+                {/* ── Fallback OTP Banner (shown when email delivery fails) ── */}
+                {fallbackOtp ? (
+                  <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-2xl p-4 mb-6 text-center">
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wide">
+                      📧 Email blocked by network
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-3">Your verification code is:</p>
+                    <div className="text-4xl font-bold font-mono tracking-[0.5em] text-emerald-600 dark:text-emerald-400 mb-3">
+                      {fallbackOtp}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => autoFillOtp(fallbackOtp)}
+                      className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-full font-semibold hover:bg-emerald-700 transition-colors"
+                    >
+                      ✓ Auto-fill this code
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-8 mx-auto max-w-sm flex items-start gap-2 text-left">
+                    <span className="text-amber-500 text-lg leading-none">⚠️</span>
+                    <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
+                      <strong>Not seeing the email?</strong> Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-center gap-3 mb-8">
+                  {otp.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => (inputRefs.current[index] = el)}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleChange(index, e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(index, e)}
+                      className="w-16 h-16 text-center text-2xl font-semibold bg-background border-2 border-muted rounded-2xl focus:border-primary focus:outline-none transition-colors"
+                    />
+                  ))}
                 </div>
 
-<div className="flex flex-wrap justify-center gap-3 mb-8">
-                {otp.map((digit, index) => (
-                  <input
-                    key={index}
-                    ref={(el) => (inputRefs.current[index] = el)}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleChange(index, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(index, e)}
-                    className="w-16 h-16 text-center text-2xl font-semibold bg-background border-2 border-muted rounded-2xl focus:border-primary focus:outline-none transition-colors"
-                  />
-                ))}
-              </div>
+                <GradientButton onClick={handleVerify}>
+                  Verify
+                </GradientButton>
 
-              <GradientButton onClick={handleVerify}>
-                Verify
-              </GradientButton>
-
-              <p className="text-center text-muted-foreground mt-6">
-                Didn't receive code?{" "}
-                <button 
-                  onClick={handleResend}
-                  className="text-foreground font-medium hover:underline"
-                  disabled={resendCount <= 0}
-                >
-                  Resend({resendCount} left)
-                </button>
-              </p>
+                <p className="text-center text-muted-foreground mt-6">
+                  Didn't receive code?{" "}
+                  <button 
+                    onClick={handleResend}
+                    className="text-foreground font-medium hover:underline"
+                    disabled={resendCount <= 0}
+                  >
+                    Resend({resendCount} left)
+                  </button>
+                </p>
 
 
-            </>
+              </>
           ) : (
             <>
                 <h1 className="text-2xl font-bold text-foreground text-center mb-4">
