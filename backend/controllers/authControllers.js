@@ -186,6 +186,7 @@ module.exports.sendOTP = async (req, res) => {
           secure: false,
           requireTLS: true,
           auth: { user: process.env.EMAIL, pass: rawPass },
+          tls: { rejectUnauthorized: false },
           connectionTimeout: 10000,
           greetingTimeout: 10000,
           socketTimeout: 15000,
