@@ -12,12 +12,10 @@ module.exports.register = async (req, res) => {
     
     let { fullname, regdNo, email, password, role, routeNo, timing, phone, profileImage } = req.body;
     
-    // Check required base fields
     if (!fullname || !email || !password) {
       return res.status(400).json({ error: "Fullname, email, and password are required" });
     }
 
-    // Role specific validation
     const assignedRole = role || 'student';
     if (assignedRole === 'student' && !regdNo) {
       return res.status(400).json({ error: "Registration number is required for students" });
@@ -28,7 +26,6 @@ module.exports.register = async (req, res) => {
     
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
-      // User already exists — return their data so frontend can log them in
       let token = generateToken(existingUser);
       res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
       return res.status(200).json({
@@ -47,7 +44,6 @@ module.exports.register = async (req, res) => {
       });
     }
 
-    // Ensure regdNo is unique (one per student)
     if (assignedRole === 'student' && regdNo) {
       const existingRegd = await userModel.findOne({ regdNo });
       if (existingRegd) {
@@ -104,7 +100,6 @@ module.exports.login = async (req, res) => {
       });
     }
 
-    // Check if user is blocked by admin
     if (user.isBlocked) {
       return res.status(403).json({ error: "Your account has been suspended. Please contact the administrator." });
     }
@@ -113,7 +108,6 @@ module.exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ error: "Incorrect password. Please try again." });
     }
-
 
     let token = generateToken(user);
     res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
@@ -149,13 +143,8 @@ module.exports.sendOTP = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
 
-    // Generate a real random 4-digit OTP
     const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
     console.log(`\n=============================\nGENERATED OTP FOR ${email} : ${otpCode}\n=============================\n`);
-
-    // Save OTP to DB (delete old ones first)
-    await otpModel.deleteMany({ email });
-    await otpModel.create({ email, otp: otpCode });
 
     const senderEmail = process.env.EMAIL || "";
     const rawPass = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
@@ -173,49 +162,51 @@ module.exports.sendOTP = async (req, res) => {
     `;
 
     let emailSent = false;
+    let lastError = "";
 
-    // ── METHOD 1: Resend HTTP API (Railway-safe, no SMTP ports needed) ────────
-    if (!emailSent && resendKey) {
+    // ── METHOD 1: Resend HTTP API ─────────────────────────────────────────────
+    if (resendKey) {
       try {
         const { Resend } = require("resend");
         const resend = new Resend(resendKey);
-        const { error: resendError } = await resend.emails.send({
+        const { data: resendData, error: resendError } = await resend.emails.send({
           from: "Campus Commute <onboarding@resend.dev>",
-          to: email,
+          to: [email],
           subject: "Your Campus Commute Verification Code",
           html: htmlBody,
         });
-        if (!resendError) {
+        if (!resendError && resendData?.id) {
           emailSent = true;
-          console.log(`[OTP] Email sent via Resend to ${email}`);
+          console.log(`[OTP] ✅ Resend success to ${email}, id=${resendData.id}`);
         } else {
-          console.warn(`[OTP] Resend failed:`, resendError.message || resendError);
+          lastError = resendError?.message || JSON.stringify(resendError) || "Resend unknown error";
+          console.warn(`[OTP] ❌ Resend failed for ${email}:`, lastError);
         }
       } catch (e) {
-        console.warn(`[OTP] Resend error:`, e.message);
+        lastError = e.message;
+        console.warn(`[OTP] ❌ Resend exception:`, e.message);
       }
     }
 
-    // ── METHOD 2: Gmail SMTP port 587 (STARTTLS) ──────────────────────────────
+    // ── METHOD 2: Gmail SMTP port 587 ─────────────────────────────────────────
     if (!emailSent && senderEmail && rawPass) {
       try {
-        const transporter = nodemailer.createTransport({
+        const t587 = nodemailer.createTransport({
           host: "smtp.gmail.com", port: 587, secure: false, requireTLS: true,
           auth: { user: senderEmail, pass: rawPass },
           tls: { rejectUnauthorized: false },
           connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 12000,
         });
-        await transporter.sendMail({
+        await t587.sendMail({
           from: `"Campus Commute" <${senderEmail}>`,
-          to: email,
-          subject: "Your Campus Commute Verification Code",
-          html: htmlBody,
-          text: `Your verification code is: ${otpCode}. Expires in 5 minutes.`,
+          to: email, subject: "Your Campus Commute Verification Code",
+          html: htmlBody, text: `Your code: ${otpCode}. Expires in 5 minutes.`,
         });
         emailSent = true;
-        console.log(`[OTP] Email sent via Gmail SMTP-587 to ${email}`);
+        console.log(`[OTP] ✅ Gmail SMTP-587 success to ${email}`);
       } catch (e1) {
-        console.warn(`[OTP] Gmail SMTP-587 failed:`, e1.message);
+        lastError = e1.message;
+        console.warn(`[OTP] ❌ Gmail SMTP-587 failed:`, e1.message);
         // Try port 465 (SSL) as last resort
         try {
           const t465 = nodemailer.createTransport({
@@ -225,27 +216,30 @@ module.exports.sendOTP = async (req, res) => {
           });
           await t465.sendMail({
             from: `"Campus Commute" <${senderEmail}>`,
-            to: email,
-            subject: "Your Campus Commute Verification Code",
-            html: htmlBody,
-            text: `Your verification code is: ${otpCode}. Expires in 5 minutes.`,
+            to: email, subject: "Your Campus Commute Verification Code",
+            html: htmlBody, text: `Your code: ${otpCode}. Expires in 5 minutes.`,
           });
           emailSent = true;
-          console.log(`[OTP] Email sent via Gmail SMTP-465 to ${email}`);
+          console.log(`[OTP] ✅ Gmail SMTP-465 success to ${email}`);
         } catch (e2) {
-          console.warn(`[OTP] Gmail SMTP-465 also failed:`, e2.message);
+          lastError = e2.message;
+          console.warn(`[OTP] ❌ Gmail SMTP-465 also failed:`, e2.message);
         }
       }
     }
 
     if (emailSent) {
+      // ✅ CRITICAL: Only update DB AFTER email is confirmed sent.
+      // If we delete first then email fails → user is stuck with no valid OTP.
+      await otpModel.deleteMany({ email });
+      await otpModel.create({ email, otp: otpCode });
       return res.status(200).json({ success: true, message: "OTP sent to your email." });
     } else {
-      // All methods failed — delete OTP so stale code is not in DB
-      await otpModel.deleteMany({ email });
-      console.error(`[OTP] ALL delivery methods failed for ${email}`);
+      // All methods failed — keep old OTP in DB so user can still verify with previous code
+      console.error(`[OTP] ALL delivery methods failed for ${email}. Last: ${lastError}`);
       return res.status(503).json({
-        error: "Failed to send OTP. Email delivery is currently unavailable. Please try again later.",
+        error: "Failed to send OTP email. Please check your email address or try again in a moment.",
+        debug: lastError
       });
     }
 
@@ -260,7 +254,6 @@ module.exports.verifyOTP = async (req, res) => {
     const { email, otp } = req.body;
     if (!email || !otp) return res.status(400).json({ error: "Email and OTP are required" });
 
-    // Find the latest OTP
     const record = await otpModel.findOne({ email }).sort({ createdAt: -1 });
 
     if (!record) {
@@ -268,7 +261,6 @@ module.exports.verifyOTP = async (req, res) => {
     }
 
     if (record.otp === otp) {
-      // Correct OTP — clear it
       await otpModel.deleteMany({ email });
       return res.status(200).json({ success: true, message: "OTP verified correctly" });
     } else {
@@ -285,7 +277,6 @@ module.exports.googleLogin = async (req, res) => {
     const { accessToken, role } = req.body;
     if (!accessToken) return res.status(400).json({ error: "Access token is required" });
 
-    // Fetch user details from Google
     const response = await fetch(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${accessToken}`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
     });
@@ -300,7 +291,6 @@ module.exports.googleLogin = async (req, res) => {
     let user = await userModel.findOne({ email: googleUser.email });
     
     // ── SECURITY: Drivers must sign up via the driver form (with secret key) ──
-    // Google OAuth cannot be used to bypass the driver secret key requirement.
     if (!user && assignedRole === 'driver') {
       return res.status(403).json({ 
         error: "Driver accounts must be registered via the Driver Sign Up form with the admin-issued secret key. Google login is only available for existing driver accounts.",
@@ -309,7 +299,6 @@ module.exports.googleLogin = async (req, res) => {
     }
     
     if (!user) {
-      // Auto-register via Google for STUDENTS only
       const hashedDummyPassword = await bcrypt.hash("OAuthGeneratedPassword!123", 10);
       user = await userModel.create({
         fullname: googleUser.name,
@@ -321,9 +310,7 @@ module.exports.googleLogin = async (req, res) => {
       });
     }
 
-    // If existing user is trying Google login as a different role, use their actual role
     const effectiveRole = user.role;
-
     let token = generateToken(user);
     res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
     
@@ -347,11 +334,10 @@ module.exports.googleLogin = async (req, res) => {
   }
 };
 
-
 module.exports.deleteAccount = async (req, res) => {
   try {
     const { password } = req.body;
-    const user = req.user; // from isLoggedIn middleware
+    const user = req.user;
 
     if (!password) {
       return res.status(400).json({ error: "Password is required to delete account" });

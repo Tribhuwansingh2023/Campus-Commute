@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
-import { Menu, MapPin, User, Bus, Clock, Phone, AlertTriangle, WifiOff } from "lucide-react";
+import { Menu, MapPin, User, Bus, Clock, Phone, AlertTriangle, WifiOff, X } from "lucide-react";
 import MobileLayout from "@/components/MobileLayout";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
@@ -71,9 +71,14 @@ const DriverHome = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [socketReady, setSocketReady] = useState(false);
   const [broadcastCount, setBroadcastCount] = useState(0);
-  // Road geometry points fetched from OSRM for accurate road-following simulation
   const [roadPoints, setRoadPoints] = useState<[number,number][]>([]);
   const [roadFetched, setRoadFetched] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null); // visible error overlay
+
+  const showError = useCallback((msg: string) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(null), 8000); // auto-dismiss after 8s
+  }, []);
 
   // Initialize socket connection + join bus room
   useEffect(() => {
@@ -95,53 +100,28 @@ const DriverHome = () => {
       setSocketReady(false);
     });
 
-    // FIXED: Duplicate Driver Broadcasting Lock (BUG 2)
     newSocket.on("route-already-active", (data) => {
-      import("@/hooks/use-toast").then(({ toast }) => {
-        toast({
-          title: "Access Denied",
-          description: data.message || "Route is already active by another driver.",
-          variant: "destructive"
-        });
-      });
+      showError(data.message || "Route is already active by another driver. Only one driver can broadcast per route.");
       setLocationSharing(false);
       setIsSimulating(false);
       setBroadcastCount(0);
     });
 
-    // FIXED: Deleted Route Crashes Driver Map (BUG 4)
     newSocket.on("route-deleted", () => {
-      import("@/hooks/use-toast").then(({ toast }) => {
-        toast({
-          title: "Route Removed",
-          description: "Your assigned route has been removed by the administrator.",
-          variant: "destructive"
-        });
-      });
+      showError("Your assigned route has been removed by the administrator.");
       setLocationSharing(false);
       setIsSimulating(false);
       newSocket.disconnect();
-      navigate("/driver-dashboard");
+      setTimeout(() => navigate("/driver-dashboard"), 3000);
     });
 
-    // FIXED: Blocked Driver Socket Not Severed (BUG 2)
     newSocket.on("force-disconnect", (data) => {
       if (data.targetDriverId === user?._id) {
-        import("@/hooks/use-toast").then(({ toast }) => {
-          toast({
-            title: "Account Suspended",
-            description: "Your account has been suspended. Contact admin.",
-            variant: "destructive"
-          });
-        });
+        showError("Your account has been suspended by the admin. You will be logged out.");
         setLocationSharing(false);
         setIsSimulating(false);
         newSocket.disconnect();
-        
-        // Dispatch custom logout event if needed, or navigate directly to login since interceptor triggers on 401 anyway.
-        // To be safe, just clear storage/state by calling AuthContext logout if we had access here, 
-        // but we can just redirect and let the next API call fail or let the user re-login.
-        navigate("/login");
+        setTimeout(() => navigate("/login"), 3000);
       }
     });
 
@@ -239,7 +219,14 @@ const DriverHome = () => {
         }
       },
       (error) => {
+        const msgs: Record<number, string> = {
+          1: "Location permission denied. Please enable GPS in your browser settings.",
+          2: "GPS signal unavailable. Please check your device location settings.",
+          3: "GPS timeout. Check your signal and try again.",
+        };
+        const msg = msgs[error.code] || `GPS error: ${error.message}`;
         console.error('[Driver] Geolocation error:', error);
+        showError(msg);
       },
       // FIX #8: maximumAge 5s instead of 60s for fresh GPS
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
@@ -255,7 +242,26 @@ const DriverHome = () => {
     <MobileLayout>
   <div className="flex flex-col min-h-screen bg-background">
 
+    {/* ── VISIBLE ERROR OVERLAY (z-9999, above map) ── */}
+    {errorMsg && (
+      <div
+        className="fixed inset-x-4 top-4 z-[9999] flex items-start gap-3 bg-red-600 text-white rounded-2xl shadow-2xl p-4 animate-in slide-in-from-top"
+        style={{ boxShadow: '0 8px 32px rgba(220,38,38,0.5)' }}
+      >
+        <AlertTriangle className="w-6 h-6 flex-shrink-0 mt-0.5" />
+        <p className="flex-1 text-sm font-medium leading-snug">{errorMsg}</p>
+        <button
+          onClick={() => setErrorMsg(null)}
+          className="flex-shrink-0 p-1 rounded-full hover:bg-red-700 transition-colors"
+          aria-label="Dismiss error"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    )}
+
     {/* Top Bar */}
+
     <div className="px-6 pb-4 z-50 bg-background transition-all">
       {/* FIXED: You are Offline Banner (BONUS 1) */}
       {!socketReady && (
