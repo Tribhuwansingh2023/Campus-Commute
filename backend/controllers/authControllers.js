@@ -172,8 +172,41 @@ module.exports.sendOTP = async (req, res) => {
     let emailSent = false;
     let lastError = "";
 
-    // ── METHOD 1: Resend HTTP API ─────────────────────────────────────────────
-    if (resendKey) {
+    // ── METHOD 1: Brevo SMTP (Railway-compatible, any recipient) ─────────────
+    const brevoHost = process.env.BREVO_HOST || "smtp-relay.brevo.com";
+    const brevoPort = parseInt(process.env.BREVO_PORT || "587");
+    const brevoUser = process.env.BREVO_USER || "";
+    const brevoPass = process.env.BREVO_PASS || "";
+    const brevoFrom = process.env.BREVO_FROM || senderEmail;
+
+    if (!emailSent && brevoUser && brevoPass) {
+      try {
+        const brevoTransport = nodemailer.createTransport({
+          host: brevoHost,
+          port: brevoPort,
+          secure: false,
+          auth: { user: brevoUser, pass: brevoPass },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 12000,
+        });
+        await brevoTransport.sendMail({
+          from: `"Campus Commute" <${brevoFrom}>`,
+          to: email,
+          subject: "Your Campus Commute Verification Code",
+          html: htmlBody,
+          text: `Your verification code is: ${otpCode}. Expires in 5 minutes.`,
+        });
+        emailSent = true;
+        console.log(`[OTP] ✅ Brevo SMTP success to ${email}`);
+      } catch (eb) {
+        lastError = eb.message;
+        console.warn(`[OTP] ❌ Brevo SMTP failed:`, eb.message);
+      }
+    }
+
+    // ── METHOD 2: Resend HTTP API (free plan: only to Resend account email) ──
+    if (!emailSent && resendKey) {
       try {
         const { Resend } = require("resend");
         const resend = new Resend(resendKey);
@@ -196,7 +229,7 @@ module.exports.sendOTP = async (req, res) => {
       }
     }
 
-    // ── METHOD 2: Gmail SMTP port 587 ─────────────────────────────────────────
+    // ── METHOD 3: Gmail SMTP port 587 (STARTTLS) ──────────────────────────────
     if (!emailSent && senderEmail && rawPass) {
       try {
         const t587 = nodemailer.createTransport({
@@ -215,7 +248,6 @@ module.exports.sendOTP = async (req, res) => {
       } catch (e1) {
         lastError = e1.message;
         console.warn(`[OTP] ❌ Gmail SMTP-587 failed:`, e1.message);
-        // Try port 465 (SSL) as last resort
         try {
           const t465 = nodemailer.createTransport({
             host: "smtp.gmail.com", port: 465, secure: true,
