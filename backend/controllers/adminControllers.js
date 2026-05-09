@@ -117,8 +117,9 @@ exports.deleteUser = async (req, res) => {
 exports.verifyDriverKey = async (req, res) => {
     try {
         const { key } = req.body;
-        const settings = await AdminSettings.findOne();
-        if (!settings) return res.status(400).json({ valid: false });
+        let settings = await AdminSettings.findOne();
+        // Auto-initialize settings with defaults if not yet created
+        if (!settings) settings = await AdminSettings.create({});
         const isValid = settings.driverSecretKey === key;
         res.status(200).json({ valid: isValid });
     } catch (error) {
