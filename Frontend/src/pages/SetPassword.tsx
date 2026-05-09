@@ -114,20 +114,22 @@ const SetPassword = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail }),
       });
-      if (!response.ok) throw new Error("Failed to send OTP");
 
       const data = await response.json();
-      if (data.emailFailed && data.otp) {
-  alert(`Your OTP is: ${data.otp}`);
-}
-      toast({ title: "Code Sent", description: "We've sent a verification code to your email." });
-      navigate("/otp-verification", data.emailFailed && data.otp ? { state: { fallbackOtp: data.otp } } : undefined);
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send OTP. Please try again.");
+      }
+
+      toast({ title: "Code Sent ✅", description: "A verification code has been sent to your email." });
+      navigate("/otp-verification");
     } catch (err: any) {
-      toast({ title: "Error", description: "Failed to send verification code. Check your backend connection.", variant: "destructive" });
+      toast({ title: "Email Error", description: err.message || "Could not send OTP. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <MobileLayout>

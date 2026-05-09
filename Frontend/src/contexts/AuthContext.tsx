@@ -172,12 +172,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
          credentials: "include",
          body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error("Backend registration failed");
+
+      // Accept both 201 (new user) and 200 (already exists — log them in)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Registration failed:", errData.error || res.status);
+        return false;
+      }
 
       const { user: serverUser } = await res.json();
       setIsAuthenticated(true);
       setUser({
-        _id: serverUser._id,
+        _id: serverUser._id || serverUser.id,
         email: serverUser.email,
         fullName: serverUser.fullname,
         role: serverUser.role,

@@ -3,6 +3,7 @@ const generateToken = require("../utils/generateToken");
 const bcrypt = require("bcrypt");
 const otpModel = require("../models/otpModel");
 const nodemailer = require("nodemailer");
+
 module.exports.register = async (req, res) => {
   try {
     if (!req.body) {
@@ -27,7 +28,23 @@ module.exports.register = async (req, res) => {
     
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ error: "User already exists" });
+      // User already exists — return their data so frontend can log them in
+      let token = generateToken(existingUser);
+      res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
+      return res.status(200).json({
+        success: true,
+        alreadyExists: true,
+        message: "Account already registered",
+        user: {
+          id: existingUser._id,
+          _id: existingUser._id,
+          fullname: existingUser.fullname,
+          email: existingUser.email,
+          role: existingUser.role,
+          routeNo: existingUser.routeNo,
+        },
+        token: token
+      });
     }
 
     // Ensure regdNo is unique (one per student)
@@ -54,19 +71,14 @@ module.exports.register = async (req, res) => {
     });
 
     let token = generateToken(newUser);
-        
-    // FIXED: JWT in localStorage Security Update (BUG 6)
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
+    res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
     
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       user: {
         id: newUser._id,
+        _id: newUser._id,
         fullname: newUser.fullname,
         email: newUser.email,
         role: newUser.role,
@@ -94,19 +106,13 @@ module.exports.login = async (req, res) => {
       return res.status(403).json({ error: "Your account has been suspended. Please contact the administrator." });
     }
     
-    // Comparing the password using async/await
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
     let token = generateToken(user);
-    // FIXED: JWT in localStorage Security Update (BUG 6)
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
+    res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
     res.status(200).json({ 
       message: "Login successful", 
       user: {
@@ -127,12 +133,7 @@ module.exports.login = async (req, res) => {
 
 module.exports.logout = (req, res) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
-
+    res.clearCookie("token", { httpOnly: true, secure: true, sameSite: "none" });
     return res.status(200).json({ message: "Logged out successfully" });
   } catch (err) {
     return res.status(500).json({ error: "Logout failed" });
@@ -144,86 +145,111 @@ module.exports.sendOTP = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
 
-    // Generate a real random 4-digit OTP every time
+    // Generate a real random 4-digit OTP
     const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
     console.log(`\n=============================\nGENERATED OTP FOR ${email} : ${otpCode}\n=============================\n`);
 
-    // Delete any existing OTP for this email, then save new one
+    // Save OTP to DB (delete old ones first)
     await otpModel.deleteMany({ email });
     await otpModel.create({ email, otp: otpCode });
 
-    // Gmail App Passwords have spaces — strip them
-    const rawPass = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
     const senderEmail = process.env.EMAIL || "";
+    const rawPass = (process.env.EMAIL_PASS || "").replace(/\s/g, "");
+    const resendKey = process.env.RESEND_API_KEY || "";
 
-    const mailPayload = {
-      from: `"Campus Commute" <${senderEmail}>`,
-      to: email,
-      subject: "Your Campus Commute Verification Code",
-      text: `Your verification code is: ${otpCode}. It expires in 5 minutes.`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
-          <h2 style="color:#0f766e;margin-bottom:8px">Campus Commute</h2>
-          <p style="color:#374151">Your email verification code is:</p>
-          <div style="background:#f0fdfa;border:2px solid #0f766e;border-radius:8px;padding:20px;text-align:center;margin:16px 0">
-            <span style="font-size:40px;font-weight:bold;letter-spacing:16px;color:#0f766e;font-family:monospace">${otpCode}</span>
-          </div>
-          <p style="color:#6b7280;font-size:13px">Expires in <strong>5 minutes</strong>. Do not share this code.</p>
+    const htmlBody = `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px">
+        <h2 style="color:#0f766e;margin-bottom:8px">Campus Commute</h2>
+        <p style="color:#374151">Your email verification code is:</p>
+        <div style="background:#f0fdfa;border:2px solid #0f766e;border-radius:8px;padding:20px;text-align:center;margin:16px 0">
+          <span style="font-size:40px;font-weight:bold;letter-spacing:16px;color:#0f766e;font-family:monospace">${otpCode}</span>
         </div>
-      `,
-    };
+        <p style="color:#6b7280;font-size:13px">Expires in <strong>5 minutes</strong>. Do not share this code.</p>
+      </div>
+    `;
 
-    // ── FAST PATH: respond immediately with the OTP ──────────────────────────
-    // Railway blocks outbound SMTP. Return the OTP in the response so the UI
-    // can display it instantly (no waiting for SMTP timeouts).
-    res.status(200).json({
-      success: true,
-      emailFailed: true,
-      otp: otpCode,
-      message: "Email delivery failed. Use the code shown on screen.",
-    });
+    let emailSent = false;
 
-    // ── BACKGROUND EMAIL ATTEMPT: try SMTP after responding ─────────────────
-    // If this ever succeeds (e.g., on a different host), the user gets a bonus
-    // email, but we never block the UI waiting for it.
-    const tryEmail = async () => {
+    // ── METHOD 1: Resend HTTP API (Railway-safe, no SMTP ports needed) ────────
+    if (!emailSent && resendKey) {
       try {
-        // Try port 587 (STARTTLS) — most cloud providers allow this
-        const t587 = nodemailer.createTransport({
-          host: 'smtp.gmail.com', port: 587, secure: false, requireTLS: true,
+        const { Resend } = require("resend");
+        const resend = new Resend(resendKey);
+        const { error: resendError } = await resend.emails.send({
+          from: "Campus Commute <onboarding@resend.dev>",
+          to: email,
+          subject: "Your Campus Commute Verification Code",
+          html: htmlBody,
+        });
+        if (!resendError) {
+          emailSent = true;
+          console.log(`[OTP] Email sent via Resend to ${email}`);
+        } else {
+          console.warn(`[OTP] Resend failed:`, resendError.message || resendError);
+        }
+      } catch (e) {
+        console.warn(`[OTP] Resend error:`, e.message);
+      }
+    }
+
+    // ── METHOD 2: Gmail SMTP port 587 (STARTTLS) ──────────────────────────────
+    if (!emailSent && senderEmail && rawPass) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: "smtp.gmail.com", port: 587, secure: false, requireTLS: true,
           auth: { user: senderEmail, pass: rawPass },
           tls: { rejectUnauthorized: false },
-          connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000,
+          connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 12000,
         });
-        await t587.sendMail(mailPayload);
-        console.log(`[OTP] Background email sent via TLS-587 to ${email} — OTP: ${otpCode}`);
+        await transporter.sendMail({
+          from: `"Campus Commute" <${senderEmail}>`,
+          to: email,
+          subject: "Your Campus Commute Verification Code",
+          html: htmlBody,
+          text: `Your verification code is: ${otpCode}. Expires in 5 minutes.`,
+        });
+        emailSent = true;
+        console.log(`[OTP] Email sent via Gmail SMTP-587 to ${email}`);
       } catch (e1) {
-        console.warn(`[OTP] Background TLS-587 failed:`, e1.message);
+        console.warn(`[OTP] Gmail SMTP-587 failed:`, e1.message);
+        // Try port 465 (SSL) as last resort
         try {
-          // Try port 465 (SSL) as fallback
           const t465 = nodemailer.createTransport({
-            host: 'smtp.gmail.com', port: 465, secure: true,
+            host: "smtp.gmail.com", port: 465, secure: true,
             auth: { user: senderEmail, pass: rawPass },
-            connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000,
+            connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 12000,
           });
-          await t465.sendMail(mailPayload);
-          console.log(`[OTP] Background email sent via SSL-465 to ${email} — OTP: ${otpCode}`);
+          await t465.sendMail({
+            from: `"Campus Commute" <${senderEmail}>`,
+            to: email,
+            subject: "Your Campus Commute Verification Code",
+            html: htmlBody,
+            text: `Your verification code is: ${otpCode}. Expires in 5 minutes.`,
+          });
+          emailSent = true;
+          console.log(`[OTP] Email sent via Gmail SMTP-465 to ${email}`);
         } catch (e2) {
-          console.warn(`[OTP] Background SSL-465 also failed:`, e2.message);
+          console.warn(`[OTP] Gmail SMTP-465 also failed:`, e2.message);
         }
       }
-    };
-    tryEmail(); // fire-and-forget — does NOT await
+    }
+
+    if (emailSent) {
+      return res.status(200).json({ success: true, message: "OTP sent to your email." });
+    } else {
+      // All methods failed — delete OTP so stale code is not in DB
+      await otpModel.deleteMany({ email });
+      console.error(`[OTP] ALL delivery methods failed for ${email}`);
+      return res.status(503).json({
+        error: "Failed to send OTP. Email delivery is currently unavailable. Please try again later.",
+      });
+    }
 
   } catch (error) {
     console.error("sendOTP critical error:", error);
-    // Only send error response if headers haven't been sent yet
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to generate OTP. Please try again." });
-    }
+    res.status(500).json({ error: "Failed to generate OTP. Please try again." });
   }
 };
-
 
 module.exports.verifyOTP = async (req, res) => {
   try {
@@ -234,15 +260,15 @@ module.exports.verifyOTP = async (req, res) => {
     const record = await otpModel.findOne({ email }).sort({ createdAt: -1 });
 
     if (!record) {
-      return res.status(400).json({ error: "OTP expired or invalid" });
+      return res.status(400).json({ error: "OTP expired or not found. Please request a new one." });
     }
 
     if (record.otp === otp) {
-      // Correct OTP, clear it
+      // Correct OTP — clear it
       await otpModel.deleteMany({ email });
       return res.status(200).json({ success: true, message: "OTP verified correctly" });
     } else {
-      return res.status(400).json({ error: "Incorrect OTP" });
+      return res.status(400).json({ error: "Incorrect OTP. Please check your email and try again." });
     }
   } catch (error) {
     console.error("verifyOTP error:", error);
@@ -270,7 +296,7 @@ module.exports.googleLogin = async (req, res) => {
     let user = await userModel.findOne({ email: googleUser.email });
     
     if (!user) {
-      // Auto-register via Google — hash the dummy password for consistency
+      // Auto-register via Google
       const hashedDummyPassword = await bcrypt.hash("OAuthGeneratedPassword!123", 10);
       user = await userModel.create({
         fullname: googleUser.name,
@@ -283,18 +309,14 @@ module.exports.googleLogin = async (req, res) => {
     }
 
     let token = generateToken(user);
-    // FIXED: JWT in localStorage Security Update (BUG 6)
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
+    res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
     
     res.status(200).json({
       success: true,
       message: "Google OAuth successful",
       user: {
         id: user._id,
+        _id: user._id,
         fullname: user.fullname,
         email: user.email,
         role: user.role,
@@ -318,22 +340,13 @@ module.exports.deleteAccount = async (req, res) => {
       return res.status(400).json({ error: "Password is required to delete account" });
     }
 
-    // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: "Incorrect password" });
     }
 
-    // Delete user
     await userModel.findByIdAndDelete(user._id);
-
-    // Clear session token
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
-
+    res.clearCookie("token", { httpOnly: true, secure: true, sameSite: "none" });
     res.status(200).json({ success: true, message: "Account deleted successfully" });
   } catch (error) {
     console.error("Delete Account Error:", error);
@@ -355,7 +368,6 @@ module.exports.resetPassword = async (req, res) => {
 
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
-
     user.password = hashedPassword;
     await user.save();
 

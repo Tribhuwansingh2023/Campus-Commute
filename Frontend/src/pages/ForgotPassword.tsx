@@ -20,7 +20,6 @@ const ForgotPassword = () => {
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [resendCount, setResendCount] = useState(3);
   const [isSending, setIsSending] = useState(false);
-  const [fallbackOtp, setFallbackOtp] = useState<string | null>(null);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -28,17 +27,6 @@ const ForgotPassword = () => {
       setTimeout(() => inputRefs.current[0]?.focus(), 100);
     }
   }, [step]);
-
-  // Auto-fill OTP inputs from fallback code
-  const autoFillOtp = (code: string) => {
-    const digits = code.split("").slice(0, 4);
-    const filled = [...digits, "", "", "", ""].slice(0, 4);
-    setOtp(filled);
-    setTimeout(() => {
-      const lastIdx = Math.min(digits.length - 1, 3);
-      inputRefs.current[lastIdx]?.focus();
-    }, 50);
-  };
 
   const handleSendOTP = async () => {
     try {
@@ -52,32 +40,19 @@ const ForgotPassword = () => {
         body: JSON.stringify({ email }),
       });
       
-      if (!response.ok) {
-        throw new Error("Failed to send OTP");
-      }
       const data = await response.json();
 
-      // Show fallback OTP on-screen if SMTP is blocked
-      if (data.emailFailed && data.otp) {
-        setFallbackOtp(data.otp);
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send OTP");
       }
       
       setStep("otp");
-      toast({
-        title: data.emailFailed ? "Code Generated" : "OTP Sent",
-        description: data.emailFailed
-          ? "Email blocked — use the code shown below."
-          : "A verification code has been sent to your email",
-      });
+      toast({ title: "OTP Sent", description: "A verification code has been sent to your email." });
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.errors[0]?.message || "Invalid email");
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to send verification code. Please try again.",
-          variant: "destructive",
-        });
+      } else if (err instanceof Error) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
       }
     } finally {
       setIsSending(false);
@@ -87,11 +62,7 @@ const ForgotPassword = () => {
   const handleVerifyOTP = async () => {
     const fullOtp = otp.join("");
     if (fullOtp.length !== 4) {
-      toast({
-        title: "Invalid OTP",
-        description: "Please enter all 4 digits",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid OTP", description: "Please enter all 4 digits", variant: "destructive" });
       return;
     }
     
@@ -102,10 +73,9 @@ const ForgotPassword = () => {
         body: JSON.stringify({ email, otp: fullOtp }),
       });
       
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Verification failed");
-      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Verification failed");
+
       navigate("/reset-password", { state: { email } });
     } catch (err: any) {
       toast({
@@ -117,7 +87,7 @@ const ForgotPassword = () => {
   };
 
   const handleResend = async () => {
-    if (resendCount <= 0) return;
+    if (resendCount <= 0 || isSending) return;
     setIsSending(true);
     
     try {
@@ -127,29 +97,15 @@ const ForgotPassword = () => {
         body: JSON.stringify({ email }),
       });
       
-      if (!response.ok) throw new Error();
-      
       const data = await response.json();
-      if (data.emailFailed && data.otp) {
-        setFallbackOtp(data.otp);
-      } else {
-        setFallbackOtp(null);
-      }
+      if (!response.ok) throw new Error(data.error || "Failed to resend OTP");
       
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);
-      toast({
-        title: data.emailFailed ? "New Code Generated" : "OTP Resent",
-        description: data.emailFailed
-          ? "Email blocked — use the code shown below."
-          : "A new verification code has been sent",
-      });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to resend code",
-        variant: "destructive",
-      });
+      inputRefs.current[0]?.focus();
+      toast({ title: "OTP Resent", description: "A new verification code has been sent." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to resend code", variant: "destructive" });
     } finally {
       setIsSending(false);
     }
@@ -205,32 +161,12 @@ const ForgotPassword = () => {
                 Enter the 4-digit code sent to <strong>{email}</strong>
               </p>
 
-              {/* ── Fallback OTP Banner ── */}
-              {fallbackOtp ? (
-                <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-2xl p-4 mb-6 text-center">
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wide">
-                    📧 Email blocked by network
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-3">Your verification code is:</p>
-                  <div className="text-4xl font-bold font-mono tracking-[0.5em] text-emerald-600 dark:text-emerald-400 mb-3">
-                    {fallbackOtp}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => autoFillOtp(fallbackOtp)}
-                    className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-full font-semibold hover:bg-emerald-700 transition-colors"
-                  >
-                    ✓ Auto-fill this code
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-6 flex items-start gap-2">
-                  <span className="text-amber-500 text-lg leading-none">⚠️</span>
-                  <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
-                    <strong>Not seeing the email?</strong> Check your <strong>Spam</strong> folder.
-                  </p>
-                </div>
-              )}
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-6 flex items-start gap-2">
+                <span className="text-amber-500 text-lg leading-none">⚠️</span>
+                <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
+                  <strong>Not seeing the email?</strong> Check your <strong>Spam</strong> folder.
+                </p>
+              </div>
 
               <div className="flex justify-center gap-4 mb-8">
                 {otp.map((digit, index) => (
@@ -252,9 +188,9 @@ const ForgotPassword = () => {
               </GradientButton>
               <p className="text-center text-muted-foreground mt-6">
                 Didn't receive code?{" "}
-                <button 
+                <button
                   onClick={handleResend}
-                  className="text-foreground font-medium"
+                  className="text-foreground font-medium disabled:opacity-50"
                   disabled={resendCount <= 0 || isSending}
                 >
                   {isSending ? "Sending..." : `Resend (${resendCount} left)`}

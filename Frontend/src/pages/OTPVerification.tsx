@@ -19,31 +19,16 @@ const OTPVerification = () => {
   const [resendCount, setResendCount] = useState(3);
   const [showChangeEmail, setShowChangeEmail] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  // Fallback OTP shown on screen when email delivery is blocked
-  const [fallbackOtp, setFallbackOtp] = useState<string | null>(
-    (location.state as any)?.fallbackOtp ?? null
-  );
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
 
-  // Auto-fill OTP inputs from fallback code
-  const autoFillOtp = (code: string) => {
-    const digits = code.split("").slice(0, 4);
-    const filled = [...digits, "", "", "", ""].slice(0, 4);
-    setOtp(filled);
-    // Focus last filled box
-    const lastIdx = Math.min(digits.length - 1, 3);
-    setTimeout(() => inputRefs.current[lastIdx]?.focus(), 50);
-  };
-
   const handleChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      value = value.slice(-1);
-    }
-    
+    if (value.length > 1) value = value.slice(-1);
     if (!/^\d*$/.test(value)) return;
 
     const newOtp = [...otp];
@@ -64,14 +49,11 @@ const OTPVerification = () => {
   const handleVerify = async () => {
     const fullOtp = otp.join("");
     if (fullOtp.length !== 4) {
-      toast({
-        title: "Invalid OTP",
-        description: "Please enter all 4 digits",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid OTP", description: "Please enter all 4 digits", variant: "destructive" });
       return;
     }
 
+    setIsVerifying(true);
     try {
       const response = await fetch(`${BACKEND_URL}/user/verify-otp`, {
         method: "POST",
@@ -84,27 +66,22 @@ const OTPVerification = () => {
         throw new Error(errorData.error || "Verification failed");
       }
 
-      toast({ title: "Success", description: "Email Verified successfully!" });
+      toast({ title: "✅ Verified", description: "Email verified successfully!" });
       navigate("/success");
     } catch (err: any) {
-      toast({
-        title: "Verification Failed",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "Verification Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsVerifying(false);
     }
   };
 
   const handleResend = async () => {
     if (resendCount <= 0) {
-      toast({
-        title: "Max attempts reached",
-        description: "Please try again later",
-        variant: "destructive",
-      });
+      toast({ title: "Max attempts reached", description: "Please try again later", variant: "destructive" });
       return;
     }
 
+    setIsResending(true);
     try {
       const response = await fetch(`${BACKEND_URL}/user/send-otp`, {
         method: "POST",
@@ -112,43 +89,28 @@ const OTPVerification = () => {
         body: JSON.stringify({ email: pendingEmail }),
       });
 
-      if (!response.ok) throw new Error();
-
       const data = await response.json();
 
-      // Show fallback OTP on-screen if email is blocked
-      if (data.emailFailed && data.otp) {
-        setFallbackOtp(data.otp);
-      } else {
-        setFallbackOtp(null);
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to resend OTP");
       }
 
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);
       inputRefs.current[0]?.focus();
-
-      toast({
-        title: data.emailFailed ? "Code Generated" : "OTP Resent",
-        description: data.emailFailed
-          ? "Email blocked — use the code shown below."
-          : "New code sent to your email.",
-      });
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to resend OTP", variant: "destructive" });
+      toast({ title: "OTP Resent", description: "A new code has been sent to your email." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to resend OTP", variant: "destructive" });
+    } finally {
+      setIsResending(false);
     }
   };
 
-  const handleChangeEmail = () => {
-    setShowChangeEmail(true);
-  };
+  const handleChangeEmail = () => setShowChangeEmail(true);
 
   const handleUpdateEmail = async () => {
     if (!newEmail.trim()) {
-      toast({
-        title: "Invalid email",
-        description: "Please enter a valid email address",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid email", description: "Please enter a valid email address", variant: "destructive" });
       return;
     }
 
@@ -159,29 +121,17 @@ const OTPVerification = () => {
         body: JSON.stringify({ email: newEmail }),
       });
 
-      if (!response.ok) throw new Error();
-
       const data = await response.json();
-      if (data.emailFailed && data.otp) {
-        setFallbackOtp(data.otp);
-      } else {
-        setFallbackOtp(null);
-      }
+      if (!response.ok) throw new Error(data.error || "Failed to send OTP");
 
       setPendingEmail(newEmail);
       setNewEmail("");
       setShowChangeEmail(false);
       setOtp(["", "", "", ""]);
       inputRefs.current[0]?.focus();
-
-      toast({
-        title: "Email Updated",
-        description: data.emailFailed
-          ? `Email blocked — use the code shown below.`
-          : `Verification code sent to ${newEmail}`,
-      });
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to send code to new email", variant: "destructive" });
+      toast({ title: "Email Updated", description: `Verification code sent to ${newEmail}` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to send code to new email", variant: "destructive" });
     }
   };
 
@@ -200,35 +150,16 @@ const OTPVerification = () => {
                   Verification Code
                 </h1>
                 <p className="text-muted-foreground text-center mb-4">
-                  A verification code was sent to your email.
+                  A 4-digit verification code was sent to<br />
+                  <strong>{pendingEmail}</strong>
                 </p>
 
-                {/* ── Fallback OTP Banner (shown when email delivery fails) ── */}
-                {fallbackOtp ? (
-                  <div className="bg-emerald-500/10 border-2 border-emerald-500/50 rounded-2xl p-4 mb-6 text-center">
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wide">
-                      📧 Email blocked by network
-                    </p>
-                    <p className="text-xs text-muted-foreground mb-3">Your verification code is:</p>
-                    <div className="text-4xl font-bold font-mono tracking-[0.5em] text-emerald-600 dark:text-emerald-400 mb-3">
-                      {fallbackOtp}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => autoFillOtp(fallbackOtp)}
-                      className="text-xs bg-emerald-600 text-white px-4 py-2 rounded-full font-semibold hover:bg-emerald-700 transition-colors"
-                    >
-                      ✓ Auto-fill this code
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-8 mx-auto max-w-sm flex items-start gap-2 text-left">
-                    <span className="text-amber-500 text-lg leading-none">⚠️</span>
-                    <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
-                      <strong>Not seeing the email?</strong> Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
-                    </p>
-                  </div>
-                )}
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-8 mx-auto max-w-sm flex items-start gap-2 text-left">
+                  <span className="text-amber-500 text-lg leading-none">⚠️</span>
+                  <p className="text-xs text-amber-600/90 dark:text-amber-400/90">
+                    <strong>Not seeing the email?</strong> Please check your <strong>Spam</strong> or <strong>Junk</strong> folder.
+                  </p>
+                </div>
 
                 <div className="flex flex-wrap justify-center gap-3 mb-8">
                   {otp.map((digit, index) => (
@@ -247,25 +178,23 @@ const OTPVerification = () => {
                   ))}
                 </div>
 
-                <GradientButton onClick={handleVerify}>
-                  Verify
+                <GradientButton onClick={handleVerify} disabled={isVerifying}>
+                  {isVerifying ? "Verifying..." : "Verify"}
                 </GradientButton>
 
                 <p className="text-center text-muted-foreground mt-6">
                   Didn't receive code?{" "}
-                  <button 
+                  <button
                     onClick={handleResend}
-                    className="text-foreground font-medium hover:underline"
-                    disabled={resendCount <= 0}
+                    className="text-foreground font-medium hover:underline disabled:opacity-50"
+                    disabled={resendCount <= 0 || isResending}
                   >
-                    Resend({resendCount} left)
+                    {isResending ? "Sending..." : `Resend (${resendCount} left)`}
                   </button>
                 </p>
-
-
               </>
-          ) : (
-            <>
+            ) : (
+              <>
                 <h1 className="text-2xl font-bold text-foreground text-center mb-4">
                   Change Email Address
                 </h1>
@@ -287,10 +216,7 @@ const OTPVerification = () => {
                     Update Email
                   </GradientButton>
                   <button
-                    onClick={() => {
-                      setShowChangeEmail(false);
-                      setNewEmail("");
-                    }}
+                    onClick={() => { setShowChangeEmail(false); setNewEmail(""); }}
                     className="w-full py-3 px-4 border-2 border-foreground/20 rounded-full text-foreground font-medium hover:bg-muted transition-colors"
                   >
                     Cancel
@@ -301,7 +227,7 @@ const OTPVerification = () => {
           </div>
 
           {!showChangeEmail && (
-            <button 
+            <button
               onClick={handleChangeEmail}
               className="text-center text-muted-foreground hover:text-foreground transition-colors mt-8"
             >

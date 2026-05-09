@@ -1,96 +1,175 @@
-# 🚌 Nexus-E3: Campus Commute
+# 🚌 Campus Commute
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![React](https://img.shields.io/badge/React-18-blue)
-![Node.js](https://img.shields.io/badge/Node.js-Backend-green)
-![Socket.io](https://img.shields.io/badge/Socket.io-Realtime-black)
-
-**Campus Commute** is a comprehensive, real-time bus tracking and transport management web application designed specifically for college campuses. It bridges the gap between drivers, students, and administrators through a seamless, mobile-first platform, offering live telemetry, accurate ETAs, smart arrival alarms, and a built-in GPS simulation mode for easy testing.
+A full-stack, production-grade college bus tracking and management platform — built with **React + TypeScript (Vite)** on the frontend and **Node.js + Express + MongoDB** on the backend.
 
 ---
 
-## ✨ Key Features
+## 🌟 Features
 
-* **📍 Real-Time GPS Tracking**: High-frequency bus location updates powered by WebSockets (Socket.io) and Leaflet maps.
-* **🗺️ Beautiful Road-Following Maps**: Integrated with the Open Source Routing Machine (OSRM) API to dynamically render curved map paths that perfectly hug physical roads, complete with interactive stop markers and rich tooltips.
-* **🎮 GPS Simulation Mode**: Drivers can instantly simulate their route directly from the dashboard, broadcasting a moving location to all students without physically driving. Perfect for demonstrations!
-* **⏰ Enhanced Arrival Alarms**: Stop missing the bus! Users can set a target stop and receive a **full-screen visual overlay, device vibration, and audio alarm** when the bus is approaching.
-* **👥 Multi-Role Dashboards**: Dedicated onboarding flows and distinct dashboards tailored specifically for **Students**, **Drivers**, and **Administrators** (for managing routes, fleets, and users).
-* **💎 Premium UI/UX**: Clean, engaging, and card-based mobile-first layout leveraging TailwindCSS, Shadcn UI, and Lucide Icons.
-* **🔐 Robust Auth**: Supports custom JWT-based email/password authentication (with a robust OTP verification fallback system) alongside seamless **Google OAuth** integration.
-* **🗄️ Resilient Architecture**: Includes a local fallback MongoDB Memory Server and automatic JSON data-seeding to ensure the application stays fully functional even during remote database outages or network restrictions.
+- **Live Bus Tracking** — Real-time GPS broadcast from driver to student map via Socket.IO
+- **Road-Following Simulation** — Bus icon moves along actual road geometry (OSRM), not straight lines
+- **Role-Based Auth** — Admin, Driver, Student with secure JWT sessions
+- **OTP Email Verification** — Email-based OTP on signup (Resend HTTP API primary + Gmail SMTP fallback)
+- **Admin Control Panel** — Manage global settings, driver assignments, bus routes, and all users
+- **Driver Secret Key** — Prevents students from signing up on the Driver portal
+- **Registration No. Uniqueness** — One student per registration number enforced in DB
+- **Block / Delete Users** — Admins can ban fake or spam accounts instantly
+- **Google OAuth Login** — One-tap sign-in for students
+
+---
+
+## 🔑 Test Login Credentials
+
+| Role | Email | Password |
+|------|-------|----------|
+| **Admin** | `admin@test.edu` | `Admin@1234` |
+| **Driver** | `driver@test.edu` | `Driver@1234` |
+| **Student** | `student@test.edu` | `Student@1234` |
+
+> Run `node seedAdmin.js` in the `/backend` directory to create / reset these accounts.
+
+---
+
+## 🔐 Default Driver Secret Key
+
+When a driver signs up, they must enter the **Driver Secret Key** to prove they are an authorized driver (not a student bypassing the role selection).
+
+**Default key:** `DRIVER2024`
+
+> The admin can change this anytime from **Admin Panel → Global Settings → Driver Secret Key**.
 
 ---
 
 ## 🛠️ Technology Stack
 
-**Frontend:**
-- React.js (Vite)
-- TypeScript
-- Tailwind CSS & Shadcn UI
-- React Leaflet & Leaflet Routing Machine
-- Socket.io-client
-
-**Backend:**
-- Node.js & Express
-- MongoDB (Mongoose)
-- Socket.io (Real-time telemetry)
-- JWT & bcrypt (Authentication)
-- Nodemailer (OTP Delivery)
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | React 18, TypeScript, Vite |
+| **Styling** | Tailwind CSS + Shadcn UI |
+| **Maps** | Leaflet (`react-leaflet`) + OSRM for road routing |
+| **Real-time** | Socket.IO (driver → student location) |
+| **Backend** | Node.js, Express.js |
+| **Database** | MongoDB Atlas (Mongoose ODM) |
+| **Auth** | JWT (cookies) + Google OAuth 2.0 |
+| **Email** | Resend HTTP API (primary) + Nodemailer Gmail SMTP (fallback) |
 
 ---
 
-## 🧪 Test Credentials
+## 🏗️ Folder Structure
 
-Want to jump right in and test the app? Use the pre-configured test accounts below:
-
-### 👑 Administrator Account
-* **Email:** `admin@test.edu`
-* **Password:** `Password123!`
-* **Capabilities:** Access the master Admin Dashboard to oversee live fleet locations, manage routes, block/unblock users, and track system analytics.
-
-### 🚌 Driver Account
-* **Email:** `driver@test.edu`
-* **Password:** `Password123!`
-* **Driver Secret Key (For New Driver Registration):** `DRIVER2024`
-* **Capabilities:** Can start trips, broadcast real GPS locations, and use the **GPS Simulation Mode**.
-
-### 🎒 Student Account
-* **Email:** `student@test.edu`
-* **Password:** `Password123!`
-* **Capabilities:** Can view live tracking, interact with map stops, set alarms, and see ETAs.
-
-> **💡 Pro Tip:** Open two browser windows—log in as the Driver in one and start the "Simulate Route" feature. Log in as the Student in the other window to watch the bus move live on the map!
+```
+Campus-Commute/
+├── Frontend/              # React frontend (Vite)
+│   └── src/
+│       ├── components/    # Reusable UI (AuthCard, GradientButton, etc.)
+│       ├── contexts/      # AuthContext, RouteContext
+│       └── pages/         # Student, Driver, Admin pages
+│
+└── backend/               # Node.js + Express API
+    ├── controllers/       # authControllers, adminControllers
+    ├── models/            # UserModel, AdminSettings, OTP
+    ├── routes/            # userRouter, adminRoutes
+    ├── data/              # routes.json (28 bus routes)
+    └── seedAdmin.js       # Creates all 3 test users
+```
 
 ---
 
-## 📁 Repository Structure
+## 🔑 Environment Variables
 
-This repository operates as a monorepo consisting of two primary services:
-* **[`/backend`](./backend)**: The Node.js API server responsible for data persistence, authentication, and WebSocket state management.
-* **[`/Campus-commute`](./Campus-commute)**: The React.js frontend application serving the client-side user interface.
+### Backend (`backend/.env`)
+```env
+BACKEND_PORT=8000
+FRONTEND_URL=https://campus-commute-vrpq.vercel.app
+MONGODB_URI=your_mongodb_atlas_uri
+JWT_SECRET=your_jwt_secret
+
+# Gmail (SMTP fallback — may be blocked on some cloud hosts)
+EMAIL=webosingh93@gmail.com
+EMAIL_PASS="jnfz bbqu zloo kckk"   # Gmail App Password (spaces are auto-stripped)
+
+# Resend (PRIMARY — HTTP API, works on Railway, Render, Vercel, etc.)
+RESEND_API_KEY=re_your_api_key_here
+
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+```
+
+### Frontend (`Frontend/.env`)
+```env
+VITE_BACKEND_URL=https://campus-commute.up.railway.app
+VITE_GOOGLE_CLIENT_ID=your_google_client_id
+```
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Running Locally
 
-### 1. Start the Backend Server
-Navigate to the backend directory, install dependencies, and run the development server.
+### 1. Backend
 ```bash
 cd backend
 npm install
-npm run dev
+node seedAdmin.js   # Create test users
+npm run dev         # Starts on port 8000
 ```
 
-### 2. Start the Frontend Application
-In a separate terminal, navigate to the frontend directory, install dependencies, and run the Vite server.
+### 2. Frontend
 ```bash
-cd Campus-commute
+cd Frontend
 npm install
-npm run dev
+npm run dev         # Starts on port 8080
 ```
 
-### 3. Environment Variables
-Both directories contain `.env.example` files or require environment variable setup. Make sure to configure standard variables such as your `MONGODB_URI`, `JWT_SECRET`, and `GOOGLE_CLIENT_ID`. 
+---
 
-*(Note: During local testing, if SMTP email delivery is blocked by your network for OTP generation, the system is designed to fallback and return the OTP directly to the frontend/terminal for seamless onboarding).*
+## 📬 Email / OTP Setup
+
+OTP emails are sent using **two methods in priority order**:
+
+### Method 1 (Primary): Resend HTTP API
+1. Go to [resend.com](https://resend.com) and sign up for free
+2. Dashboard → **API Keys** → **Create API Key**
+3. Copy the key and add it to Railway as `RESEND_API_KEY`
+4. **Free tier:** 3,000 emails/month, 100/day — more than enough
+5. Emails are sent from `onboarding@resend.dev` on the free plan
+
+> ✅ **Recommended** — HTTP-based, never blocked by cloud hosts like Railway
+
+### Method 2 (Fallback): Gmail App Password (SMTP)
+1. Enable **2-Factor Authentication** on Gmail account
+2. Go to **Google Account → Security → App Passwords**
+3. Create an App Password for "Mail"
+4. Paste as `EMAIL_PASS` in env (spaces are auto-stripped by the backend)
+
+> ⚠️ **Note:** Gmail SMTP (ports 587 & 465) may be blocked on Railway and similar cloud hosts. Set up Resend as the primary method.
+
+---
+
+## 👤 User Roles
+
+| Role | Access |
+|------|--------|
+| **Student** | Live map, bus tracking, stop timings, driver info |
+| **Driver** | GPS broadcast, route map, bus management info |
+| **Admin** | Full control: settings, routes, drivers, user management |
+
+---
+
+## 🛡️ Security
+
+- JWT tokens stored in **HTTP-only cookies**
+- Driver signup gated by **admin-controlled secret key**
+- Blocked users **cannot log in**
+- Registration numbers are **unique per student**
+- OTP codes expire after **5 minutes** and are deleted from DB after verification
+
+---
+
+## 🔗 Production Deployment
+
+| Service | URL |
+|---------|-----|
+| **Frontend** | https://campus-commute-vrpq.vercel.app |
+| **Backend** | https://campus-commute.up.railway.app |
+| **Railway Project** | https://railway.com/project/62a1f06d-2cd7-40e6-8b0f-a09304696e5f |
+| **Vercel Project** | https://vercel.com/webosingh93-gmailcoms-projects/campus-commute-vrpq |
