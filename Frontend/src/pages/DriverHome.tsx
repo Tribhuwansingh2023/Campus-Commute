@@ -228,7 +228,7 @@ const DriverHome = () => {
         setCoords(newCoords);
         
         // Send location to backend
-        if (user?.routeNo) {
+        if (user?.routeNo && socket) {
           socket.emit("driver-send-location", {
             busId: String(user.routeNo),
             lat: newCoords.lat,
@@ -249,7 +249,7 @@ const DriverHome = () => {
       console.log("[Driver] Stopping GPS watch");
       navigator.geolocation.clearWatch(id);
     };
-  }, [socket, socketReady, locationSharing, dutyStatus, user?.routeNo]);
+ }, [locationSharing, dutyStatus, socketReady]);
 
   return (
     <MobileLayout>
