@@ -77,8 +77,8 @@ const DriverHome = () => {
 
   // Initialize socket connection + join bus room
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_BACKEND_URL || "http://localhost:8000", {
-      transports: ["websocket", "polling"],
+   const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
+  transports: ["websocket"],
     });
 
     newSocket.on("connect", () => {
@@ -150,7 +150,7 @@ const DriverHome = () => {
     return () => {
       newSocket.disconnect();
     };
-  }, [user?.routeNo]);
+  }, []);
 
   // Fetch OSRM road geometry once when route is known
   useEffect(() => {
@@ -187,7 +187,7 @@ const DriverHome = () => {
 
   // Road-following simulation — walks along real OSRM road geometry
   useEffect(() => {
-    if (!isSimulating || !locationSharing || !dutyStatus || !socketReady || !socket || !user?.routeNo) return;
+   if (!isSimulating || !dutyStatus || !socketReady || !socket || !user?.routeNo) return;
     if (roadPoints.length < 2) {
       console.warn('[Driver] Road points not ready yet...');
       return;
@@ -212,7 +212,7 @@ const DriverHome = () => {
       console.log('[Driver] Stopping road-following simulation');
       clearInterval(simInterval);
     };
-  }, [isSimulating, locationSharing, dutyStatus, socketReady, socket, user?.routeNo, roadPoints]);
+ }, [isSimulating, dutyStatus, socketReady, socket, user?.routeNo, roadPoints]);
 
   // GPS watching — only when locationSharing is ON and socket is ready (and NOT simulating)
   useEffect(() => {
@@ -371,18 +371,31 @@ const DriverHome = () => {
           </button>
           
           <button
-            onClick={() => {
-              const newSim = !isSimulating;
-              setIsSimulating(newSim);
-              if (!locationSharing && newSim) {
-                setLocationSharing(true);
-              }
-              if (!newSim && socket && user?.routeNo) {
-                socket.emit("driver-offline", { busId: String(user.routeNo) });
-                setBroadcastCount(0);
-                setLocationSharing(false);
-              }
-            }}
+           onClick={() => {
+
+  if (!isSimulating) {
+
+    // stop real GPS completely
+    setLocationSharing(false);
+
+    // start simulation
+    setIsSimulating(true);
+
+  } else {
+
+    // stop simulation
+    setIsSimulating(false);
+    setCoords(null);
+
+    if (socket && user?.routeNo) {
+      socket.emit("driver-offline", {
+        busId: String(user.routeNo),
+      });
+    }
+
+    setBroadcastCount(0);
+  }
+}}
             className={`flex-1 ${
               isSimulating ? "bg-amber-500 hover:bg-amber-600" : "bg-blue-500 hover:bg-blue-600"
             } text-white py-3 px-4 rounded-lg font-medium shadow-lg transition-colors text-sm`}
