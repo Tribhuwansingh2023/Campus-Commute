@@ -15,10 +15,10 @@ const Success = () => {
 
   const handleContinue = async () => {
     setIsLoading(true);
-    const success = await completeSignup({});
+    const result = await completeSignup({});
     setIsLoading(false);
 
-    if (success) {
+    if (result.success) {
       // Small delay to ensure AuthContext state updates before navigation triggers route guards
       setTimeout(() => {
         if (pendingRole === "driver") {
@@ -29,13 +29,14 @@ const Success = () => {
       }, 100);
     } else {
       toast({
-        title: "Sync Error",
-        description: "Failed to finalize your account. Redirecting to login...",
+        title: "Account Error",
+        description: result.error || "Failed to finalize your account. Redirecting to login...",
         variant: "destructive",
       });
-      setTimeout(() => navigate("/login"), 1500);
+      setTimeout(() => navigate("/login"), 2500);
     }
   };
+
 
   return (
     <MobileLayout>

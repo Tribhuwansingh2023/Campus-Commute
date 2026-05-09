@@ -26,6 +26,14 @@ module.exports.register = async (req, res) => {
     
     const existingUser = await userModel.findOne({ email });
     if (existingUser) {
+      if (existingUser.role !== assignedRole && existingUser.role !== 'admin') {
+        return res.status(409).json({
+          error: `This email is already registered as a ${existingUser.role}. Please log in with your existing ${existingUser.role} account, or use a different email address.`,
+          existingRole: existingUser.role,
+          crossRole: true
+        });
+      }
+      // Same role — log them in directly
       let token = generateToken(existingUser);
       res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
       return res.status(200).json({

@@ -36,7 +36,7 @@ interface AuthContextType {
   setPendingRole: (role: UserRole) => void;
   setPendingEmail: (email: string) => void;
   setPendingUserData: (data: Partial<UserData>) => void;
-  completeSignup: (data: Partial<UserData>) => Promise<boolean>;
+  completeSignup: (data: Partial<UserData>) => Promise<{success: boolean, error?: string}>;
   updateUser: (data: Partial<UserData>) => void;
   setSelectedRoute: (route: number) => void;
 }
@@ -157,7 +157,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPendingUserData({});
   };
 
-  const completeSignup = async (data: Partial<UserData>): Promise<boolean> => {
+  const completeSignup = async (data: Partial<UserData>): Promise<{success: boolean, error?: string}> => {
     try {
       const payload = {
          fullname: pendingUserData.fullName || pendingEmail.split('@')[0],
@@ -181,7 +181,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         console.error("Registration failed:", errData.error || res.status);
-        return false;
+        return { success: false, error: errData.error || "Registration failed" };
       }
 
       const { user: serverUser } = await res.json();
@@ -196,10 +196,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       setPendingEmail("");
       setPendingUserData({});
-      return true;
+      return { success: true };
     } catch (err) {
       console.error(err);
-      return false;
+      return { success: false, error: "Network error. Please check your connection." };
     }
   };
 
