@@ -36,11 +36,16 @@ const ForgotPassword = () => {
         throw new Error("Failed to send OTP");
       }
       const data = await response.json();
+
+      // Fallback: if SMTP is blocked on Railway, backend returns the OTP directly
+      if (data.emailFailed && data.otp) {
+        alert(`📧 Email delivery failed.\n\nYour OTP is: ${data.otp}\n\nPlease enter this code to continue.`);
+      }
       
       setStep("otp");
       toast({
         title: "OTP Sent",
-        description: "A verification code has been sent to your email",
+        description: data.emailFailed ? "Email blocked — check the popup for your code." : "A verification code has been sent to your email",
       });
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -98,6 +103,11 @@ const ForgotPassword = () => {
       });
       
       if (!response.ok) throw new Error();
+      
+      const resendData = await response.json();
+      if (resendData.emailFailed && resendData.otp) {
+        alert(`📧 Email blocked.\n\nYour new OTP is: ${resendData.otp}\n\nPlease enter this code to continue.`);
+      }
       
       setResendCount(resendCount - 1);
       setOtp(["", "", "", ""]);

@@ -158,7 +158,7 @@ const DriverSignup = () => {
     // Verify the driver secret key with the backend
     setIsVerifying(true);
     try {
-      fetch(`${BACKEND_URL}/api/admin/verify-driver-key`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/verify-driver-key`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: secretKey.trim() }),
