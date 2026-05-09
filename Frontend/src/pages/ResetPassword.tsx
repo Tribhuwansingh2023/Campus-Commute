@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { z } from "zod";
 import MobileLayout from "@/components/MobileLayout";
 import FormInput from "@/components/FormInput";
@@ -13,20 +13,19 @@ const passwordSchema = z.string().min(8, "Password must be at least 8 characters
 
 const ResetPassword = () => {
   const navigate = useNavigate();
-  const location = require("react-router-dom").useLocation();
+  const location = useLocation();
   const { toast } = useToast();
-  
-  const email = location.state?.email;
-
-  // Protect route if accessed without verification
-  if (!email) {
-    navigate("/forgot-password", { replace: true });
-    return null;
-  }
-  
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<{ newPassword?: string; confirmPassword?: string }>({});
+  const [isLoading, setIsLoading] = useState(false);
+
+  const email = (location.state as any)?.email;
+
+  // Protect route — must arrive here via ForgotPassword OTP flow
+  if (!email) {
+    return <Navigate to="/forgot-password" replace />;
+  }
 
   const validateForm = () => {
     const newErrors: { newPassword?: string; confirmPassword?: string } = {};
@@ -50,6 +49,7 @@ const ResetPassword = () => {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    setIsLoading(true);
     try {
       const response = await fetch(`${BACKEND_URL}/user/reset-password`, {
         method: "POST",
@@ -63,8 +63,8 @@ const ResetPassword = () => {
       }
 
       toast({
-        title: "Password Reset",
-        description: "Your password has been successfully reset",
+        title: "✅ Password Reset",
+        description: "Your password has been successfully reset. Please log in.",
       });
       navigate("/login");
     } catch (err: any) {
@@ -73,6 +73,8 @@ const ResetPassword = () => {
         description: err.message,
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,7 +88,7 @@ const ResetPassword = () => {
             Set New Password
           </h1>
           <p className="text-muted-foreground text-center mb-8">
-            Create a new password for your account
+            Create a new password for <strong>{email}</strong>
           </p>
 
           <div className="space-y-6">
@@ -118,8 +120,8 @@ const ResetPassword = () => {
           </div>
 
           <div className="mt-12">
-            <GradientButton onClick={handleSubmit}>
-              Reset Password
+            <GradientButton onClick={handleSubmit} disabled={isLoading}>
+              {isLoading ? "Resetting..." : "Reset Password"}
             </GradientButton>
           </div>
         </div>

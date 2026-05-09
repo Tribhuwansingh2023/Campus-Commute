@@ -34,14 +34,15 @@ const passwordSchema = z.string().min(8, "Password must be at least 8 characters
         const result = await googleLogin(tokenResponse.access_token, role);
         
         if (result.success) {
-          toast({
-            title: "Success",
-            description: "Successfully authenticated with Google",
-          });
+          toast({ title: "Success", description: "Successfully authenticated with Google" });
           const serverRole = result.role || role;
           navigate(serverRole === "admin" ? "/admin" : serverRole === "driver" ? "/driver-home" : "/home");
         } else {
-          throw new Error("Google login failed on backend");
+          toast({
+            title: "Access Denied",
+            description: result.error || "Google login failed. Please try again.",
+            variant: "destructive",
+          });
         }
       } catch (err) {
         console.error(err);
@@ -62,6 +63,7 @@ const passwordSchema = z.string().min(8, "Password must be at least 8 characters
       });
     }
   });
+
 
   const handleSocialLogin = (provider: string) => {
     if (provider === "Google") {
@@ -90,7 +92,12 @@ const passwordSchema = z.string().min(8, "Password must be at least 8 characters
         const serverRole = result.role || role;
         navigate(serverRole === "admin" ? "/admin" : serverRole === "driver" ? "/driver-home" : "/home");
       } else {
-        toast({ title: "Login Failed", description: "Invalid email or password", variant: "destructive" });
+        // Show the backend error message ("no account found", "incorrect password", etc.)
+        toast({
+          title: "Login Failed",
+          description: result.error || "Invalid email or password",
+          variant: "destructive",
+        });
       }
     } catch (err: any) {
       if (err instanceof z.ZodError) {

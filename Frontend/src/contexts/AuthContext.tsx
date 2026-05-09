@@ -30,8 +30,8 @@ interface AuthContextType {
   pendingRole: UserRole;
   pendingEmail: string;
   pendingUserData: Partial<UserData>;
-  login: (email: string, password: string, role: UserRole) => Promise<{success: boolean, role?: UserRole}>;
-  googleLogin: (accessToken: string, role: UserRole) => Promise<{success: boolean, role?: UserRole}>;
+  login: (email: string, password: string, role: UserRole) => Promise<{success: boolean, role?: UserRole, error?: string}>;
+  googleLogin: (accessToken: string, role: UserRole) => Promise<{success: boolean, role?: UserRole, error?: string}>;
   logout: () => void;
   setPendingRole: (role: UserRole) => void;
   setPendingEmail: (email: string) => void;
@@ -77,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem("cc-pending-data", JSON.stringify(pendingUserData));
   }, [pendingRole, pendingEmail, pendingUserData]);
 
-  const login = async (email: string, password: string, role: UserRole): Promise<{success: boolean, role?: UserRole}> => {
+  const login = async (email: string, password: string, role: UserRole): Promise<{success: boolean, role?: UserRole, error?: string}> => {
     try {
       const response = await fetch(`${BACKEND_URL}/user/login`, {
         method: "POST",
@@ -86,8 +86,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         body: JSON.stringify({ email, password })
       });
       if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
         if (response.status >= 500) throw new Error("Server error - please try again later.");
-        return { success: false };
+        return { success: false, error: errData.error || "Login failed" };
       }
       
       const { user: serverUser } = await response.json();
@@ -107,7 +108,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const googleLogin = async (accessToken: string, role: UserRole): Promise<{success: boolean, role?: UserRole}> => {
+
+  const googleLogin = async (accessToken: string, role: UserRole): Promise<{success: boolean, role?: UserRole, error?: string}> => {
     try {
       const response = await fetch(`${BACKEND_URL}/user/google-login`, {
         method: "POST",
@@ -116,8 +118,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         body: JSON.stringify({ accessToken, role })
       });
       if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
         if (response.status >= 500) throw new Error("Server error - please try again later.");
-        return { success: false };
+        return { success: false, error: errData.error || "Google login failed" };
       }
       
       const { user: serverUser } = await response.json();
@@ -137,6 +140,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       throw new Error("Could not connect to the backend server.");
     }
   };
+
 
   const logout = async () => {
     try {

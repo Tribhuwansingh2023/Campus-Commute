@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Loader2 } from "lucide-react";
 import MobileLayout from "@/components/MobileLayout";
 import AuthCard from "@/components/AuthCard";
 import GradientButton from "@/components/GradientButton";
@@ -10,22 +11,29 @@ const Success = () => {
   const navigate = useNavigate();
   const { pendingRole, completeSignup } = useAuth();
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
+    setIsLoading(true);
     const success = await completeSignup({});
+    setIsLoading(false);
+
     if (success) {
-      if (pendingRole === "driver") {
-        navigate("/driver-home");
-      } else {
-        navigate("/route-selection");
-      }
+      // Small delay to ensure AuthContext state updates before navigation triggers route guards
+      setTimeout(() => {
+        if (pendingRole === "driver") {
+          navigate("/driver-home");
+        } else {
+          navigate("/route-selection");
+        }
+      }, 100);
     } else {
       toast({
-         title: "Sync Error",
-         description: "Failed to finalize your account on the server. Redirecting to login...",
-         variant: "destructive"
+        title: "Sync Error",
+        description: "Failed to finalize your account. Redirecting to login...",
+        variant: "destructive",
       });
-      navigate("/login");
+      setTimeout(() => navigate("/login"), 1500);
     }
   };
 
@@ -38,14 +46,19 @@ const Success = () => {
           </div>
 
           <h1 className="text-3xl font-bold text-foreground mb-4">
-            Success !!
+            Success!!
           </h1>
           <p className="text-muted-foreground text-center mb-12">
             Congratulations! You have been<br />successfully authenticated.
           </p>
 
-          <GradientButton onClick={handleContinue}>
-            Continue
+          <GradientButton onClick={handleContinue} disabled={isLoading}>
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Setting up account...
+              </span>
+            ) : "Continue"}
           </GradientButton>
         </div>
       </AuthCard>

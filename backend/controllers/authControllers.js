@@ -98,7 +98,10 @@ module.exports.login = async (req, res) => {
 
     let user = await userModel.findOne({ email });
     if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
+      return res.status(400).json({ 
+        error: "No account found with this email. Please sign up first.",
+        notFound: true
+      });
     }
 
     // Check if user is blocked by admin
@@ -108,8 +111,9 @@ module.exports.login = async (req, res) => {
     
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ error: "Invalid credentials" });
+      return res.status(400).json({ error: "Incorrect password. Please try again." });
     }
+
 
     let token = generateToken(user);
     res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
@@ -295,8 +299,17 @@ module.exports.googleLogin = async (req, res) => {
     
     let user = await userModel.findOne({ email: googleUser.email });
     
+    // ── SECURITY: Drivers must sign up via the driver form (with secret key) ──
+    // Google OAuth cannot be used to bypass the driver secret key requirement.
+    if (!user && assignedRole === 'driver') {
+      return res.status(403).json({ 
+        error: "Driver accounts must be registered via the Driver Sign Up form with the admin-issued secret key. Google login is only available for existing driver accounts.",
+        requiresSignup: true
+      });
+    }
+    
     if (!user) {
-      // Auto-register via Google
+      // Auto-register via Google for STUDENTS only
       const hashedDummyPassword = await bcrypt.hash("OAuthGeneratedPassword!123", 10);
       user = await userModel.create({
         fullname: googleUser.name,
@@ -307,6 +320,9 @@ module.exports.googleLogin = async (req, res) => {
         routeNo: assignedRole === 'driver' ? 'UNASSIGNED' : undefined
       });
     }
+
+    // If existing user is trying Google login as a different role, use their actual role
+    const effectiveRole = user.role;
 
     let token = generateToken(user);
     res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });
@@ -319,7 +335,7 @@ module.exports.googleLogin = async (req, res) => {
         _id: user._id,
         fullname: user.fullname,
         email: user.email,
-        role: user.role,
+        role: effectiveRole,
         routeNo: user.routeNo,
         profileImage: user.profileImage
       },
@@ -330,6 +346,7 @@ module.exports.googleLogin = async (req, res) => {
     res.status(500).json({ error: "Failed to authenticate with Google" });
   }
 };
+
 
 module.exports.deleteAccount = async (req, res) => {
   try {
